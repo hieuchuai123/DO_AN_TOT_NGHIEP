@@ -1,0 +1,75 @@
+   body {
+       font-family: Arial, sans-serif;
+       margin: 20px;
+   }
+
+   .uid-item {
+       margin: 10px 0;
+       padding: 10px;
+       border: 1px solid #ccc;
+       border-radius: 8px;
+   }
+
+   button {
+       margin-left: 10px;
+   }
+
+   .form-label {
+       margin-top: 20px;
+   }
+
+   .form-control {
+       border-color: black;
+       border-radius: 0%;
+   }
+
+   .form-select {
+       padding: 5px;
+   }
+
+   /* Menu */
+   .menu {
+       display: flex;
+       gap: 15px;
+       margin-bottom: 20px;
+   }
+
+   .menu button {
+       padding: 10px 15px;
+       border: none;
+       background-color: #f0f0f0;
+       cursor: pointer;
+       border-radius: 5px;
+   }
+
+   .menu button.active {
+       background-color: #007BFF;
+       color: white;
+   }
+
+   /* Box hiển thị */
+   .content-section {
+       display: none;
+   }
+
+   .content-section.active {
+       display: block;
+   }
+
+   .card {
+       border: 1px solid #ccc;
+       border-radius: 6px;
+       padding: 10px;
+       margin: 10px 0;
+   }
+
+   .card button {
+       margin-left: 10px;
+   }
+
+   /* thao tác phần nút nhấn */
+   .view-info-btn {
+       background-color: #28a745;
+       /* xanh lá */
+       color: white;
+   }
