@@ -15,8 +15,8 @@ MFRC522 rfid(SS_PIN, RST_PIN);       // setup RFID
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // setup LCD
 
 // WiFi
-#define WIFI_SSID "Su"
-#define WIFI_PASSWORD "sususu2003"
+#define WIFI_SSID "NHAM COFFEE"
+#define WIFI_PASSWORD "nhamquan10"
 
 // Firebase
 #define API_KEY "AIzaSyDML_o7tVQOf7wrzdA3NasklY5Wb3cPCjo"
@@ -170,7 +170,6 @@ String shortenName(String fullName) {
   
   return result;
 }
-
 
 // hàm setup
 void setup() {

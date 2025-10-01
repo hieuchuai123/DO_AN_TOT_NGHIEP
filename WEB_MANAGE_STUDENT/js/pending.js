@@ -168,7 +168,7 @@ async function approveUser(uid) {
 
         // 2️⃣ Lưu thông tin RFID
         await set(ref(db, "RFID/" + uid), {
-            lastStatus: "Len-xe",
+            lastStatus: "Undefined",
             createdAt: formatDateVN(new Date())
         });
 
@@ -202,21 +202,21 @@ function showSection(sectionId) {
 
 // ✅ Hàm xóa học sinh + dữ liệu RFID
 function deleteStudent(uid) {
-    if (confirm("Bạn có chắc muốn xóa học sinh này không?")) {
-        const updates = {};
-        updates["USER/" + uid] = null; // xóa ở Students
-        updates["RFID/" + uid] = null;     // xóa ở RFID
+    const updates = {};
+    updates["USER/" + uid] = null; // xóa ở Students
+    updates["RFID/" + uid] = null;     // xóa ở RFID
 
-        update(ref(db), updates)
-            .then(() => {
-                alert("✅ Đã xóa học sinh và dữ liệu RFID thành công!");
-                loadStudentList(); // reload lại danh sách
-            })
-            .catch((error) => {
-                console.error("❌ Lỗi khi xóa học sinh:", error);
-                alert("Không thể xóa học sinh. Vui lòng thử lại.");
-            });
-    }
+    update(ref(db), updates)
+        .then(() => {
+            toastr.success("✅ Đã xóa học sinh và dữ liệu RFID thành công!");
+            // đóng modal xác nhận xóa
+            $("#deleteInfoModal").modal("hide");
+            loadStudentList(); // reload lại danh sách
+        })
+        .catch((error) => {
+            console.error("❌ Lỗi khi xóa học sinh:", error);
+            toastr.error("Không thể xóa học sinh. Vui lòng thử lại.");
+        });
 }
 
 function openEditModal(uid) {
@@ -323,6 +323,7 @@ $(document).ready(function () {
         $("#modal-edit-student-list").modal("hide");
         $("#viewInfoModal").modal("hide");
         $("#viewHistoryModal").modal("hide");
+        $("#deleteInfoModal").modal("hide");
     })
 
     // Xóa UID trong danh sách Pending
@@ -334,9 +335,30 @@ $(document).ready(function () {
 
     // sự kiện khi nhấn nút Xóa USER trong Student List
     $(document).on("click", ".delete-btn", function () {
+        // lấy dữ liệu của USER
         const uid = $(this).data("uid");
-        deleteStudent(uid);
+
+        // log uid ra để kiểm tra
+        console.log(uid);
+
+        // Gán uid vào nút confirm-delete trong modal
+        $("#confirm-delete").data("uid", uid);
+
+        // mở modal xác nhận xóa
+        $("#deleteInfoModal").modal("show");
     });
+
+    // sự kiện khi nhấn nút xác nhận xóa trong MODAL
+    $(document).on("click", "#confirm-delete", function () {
+        // lấy dữ liệu của USER
+        const uid = $(this).data("uid");
+
+        // log uid ra để kiểm tra
+        console.log(uid);
+
+        // gọi hàm xóa USER
+        deleteStudent(uid);
+    })
 
     // Khi nhấn duyệt trong danh sách Pending
     $(document).on("click", ".approve-btn", function () {
