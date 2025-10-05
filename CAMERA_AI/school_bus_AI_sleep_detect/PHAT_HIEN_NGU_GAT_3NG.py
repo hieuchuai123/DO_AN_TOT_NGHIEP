@@ -8,10 +8,14 @@ from queue import Queue, Empty
 from collections import deque
 
 # ================== CẤU HÌNH ==================
-URL_SNAPSHOT      = "http://172.16.0.75/cam-mid.jpg"  # <-- đổi IP/endpoint của bạn
+URL_SNAPSHOT      = "http://172.16.0.88/cam-mid.jpg"  # <-- đổi IP/endpoint của bạn
 CONNECT_TIMEOUT   = 1.5
 READ_TIMEOUT      = 2.5
 TARGET_FETCH_FPS  = 6
+
+# Connect to ESP32 MCU
+ESP32_IP = "172.16.0.223"
+URL = f"http://{ESP32_IP}/send"
 
 # Xử lý & hiển thị
 PROCESS_WIDTH     = 416
@@ -162,6 +166,19 @@ def bbox_iou(b1, b2):
     a2 = max(0, x22-x21) * max(0, y22-y21)
     union = a1 + a2 - inter + 1e-6
     return float(inter/union)
+
+# SEND MESSAGE TO ESP32 MCU
+def send_message(msg):  
+    try:
+        response = requests.get(URL, params={"msg": msg}, timeout=3)
+        print("📨 Gửi:", msg)
+        print("📬 ESP32 phản hồi:", response.text)
+    except Exception as e:
+        print("❌ Lỗi khi gửi dữ liệu:", e)
+
+# ===== BIẾN CHỐNG SPAM CẢNH BÁO =====
+last_alert_time = 0
+ALERT_COOLDOWN = 5  # số giây tối thiểu giữa 2 lần gửi cảnh báo
 
 # ====== tracks & logic ======
 tracks = {
@@ -529,6 +546,13 @@ try:
                     cv2.rectangle(display, (X1, Y1), (X2, Y2), color, 2)
                     cv2.putText(display, f"P{item['tid']} {st}", (X1, max(20, Y1 - 8)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                    
+                    # 🔹 GỬI THÔNG BÁO KHI PHÁT HIỆN NGỦ GẬT
+                    if st == "Ngu gat":
+                        now = time.time()
+                        if now - last_alert_time > ALERT_COOLDOWN:
+                            send_message("Drowsiness detected 🚨")
+                            last_alert_time = now
 
             cv2.imshow("Driver State (snapshot, 3-person, robust)", display)
             if cv2.waitKey(1) & 0xFF == ord('q'):
