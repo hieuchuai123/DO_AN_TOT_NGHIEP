@@ -1,8 +1,8 @@
 #include <WiFi.h>
 #include <WebServer.h>
 
-const char* ssid = "NHAM COFFEE";       // 🔹 Nhập Wi-Fi của bạn
-const char* password = "nhamquan10";
+const char* ssid = "Su";       // 🔹 Nhập Wi-Fi của bạn
+const char* password = "sususu2003";
 
 WebServer server(80); // Tạo web server cổng 80
 
