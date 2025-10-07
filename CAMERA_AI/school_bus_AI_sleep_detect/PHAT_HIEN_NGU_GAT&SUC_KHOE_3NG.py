@@ -210,6 +210,8 @@ tracks = {
         "ear_filt": None, "roll_filt": None, "roll_vel_filt": 0.0,
         "ear_open_baseline": None,
         "last_logic_ts": None,
+        "t_last_emotion_check": 0.0, # <-- THÊM DÒNG NÀY
+        "emotion_status": "Unknown" # <-- Thêm dòng này để lưu kết quả
     } for tid in range(1, MAX_TRACKS + 1)
 }
 
@@ -388,17 +390,10 @@ class FaceMeshWorker:
                     x1, y1 = max(min(xs), 0), max(min(ys), 0)
                     x2, y2 = min(max(xs), W - 1), min(max(ys), H - 1)
                     cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-                    area = max(1, (x2 - x1) * (y2 - y1))
-                    # === BẮT ĐẦU TÍCH HỢP ===
-                    face_roi = proc[y1:y2, x1:x2]
-                    emotion = self.emotion_model.predict(face_roi)
-                    # === KẾT THÚC TÍCH HỢP ===
-
+                    area = max(1, (x2 - x1) * (y2 - y1))    
                     detections.append({"EAR": EAR, "MAR": MAR, "ROLL": ROLL,
                                        "bbox": (x1, y1, x2, y2),
-                                       "cx": cx, "cy": cy, "area": area,
-                                        "emotion": emotion}) # <--thêm emotion
-
+                                       "cx": cx, "cy": cy, "area": area,}) 
             pairs = assign_faces_to_tracks(detections, W, H) if detections else []
 
             overlay = []
@@ -406,7 +401,20 @@ class FaceMeshWorker:
                 EAR, MAR, ROLL = det["EAR"], det["MAR"], det["ROLL"]
                 x1, y1, x2, y2  = det["bbox"]
                 tr = tracks[tid]
+                  # Bây giờ ta đã biết đây là người có ID `tid`, ta có thể kiểm tra lịch sử
+                emotion = tr.get("emotion_status", "Unknown") 
+                if (now_ts - tr.get("t_last_emotion_check", 0.0)) > EMOTION_CHECK_INTERVAL:
+                  # Chỉ khi đủ thời gian, ta mới cắt ảnh và chạy model AI
+                    x1, y1, x2, y2 = det["bbox"]
+                    face_roi = proc[y1:y2, x1:x2]
+                    emotion = self.emotion_model.predict(face_roi)
+                
+                 # Lưu lại kết quả và thời gian vào "hồ sơ" của người này
+                    tr["emotion_status"] = emotion
+                    tr["t_last_emotion_check"] = now_ts
 
+                 # Gán emotion vào `det` để các bước sau (vẽ overlay) có thể dùng
+                det["emotion"] = emotion
                 # ====== LỌC MỀM cho logic (EMA) ======
                 # dt cho vận tốc roll
                 dt = now_ts - tr["last_logic_ts"] if tr["last_logic_ts"] else 1/8.0
