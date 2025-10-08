@@ -138,6 +138,72 @@ function loadStudentRFIDHistory(uid) {
     }, { onlyOnce: true });
 }
 
+function loadHistoryTable(filtered) {
+    const $tableBody = $("#historyList");
+    $tableBody.empty();
+
+    if (!filtered || filtered.length === 0) {
+        $tableBody.append(`
+            <tr>
+                <td colspan="2" class="text-center text-muted">Không có bản ghi nào trong ngày này</td>
+            </tr>
+        `);
+        return;
+    }
+
+    filtered.forEach(record => {
+        const time = record.time || "Không xác định";
+        const status = record.status || "N/A";
+
+        const row = `
+            <tr>
+                <td>${time}</td>
+                <td>${status}</td>
+            </tr>
+        `;
+        $tableBody.append(row);
+    });
+}
+
+function filterHistoryByDate(uid, dateStr) {
+    if (!uid || !dateStr) {
+        console.warn("Thiếu UID hoặc ngày lọc");
+        return;
+    }
+
+    const historyRef = ref(db, "RFID/" + uid + "/accessLog");
+    onValue(historyRef, (snapshot) => {
+        const data = snapshot.val();
+        if (!data) {
+            console.log("Không có dữ liệu");
+            return;
+        }
+
+        const records = Object.values(data);
+
+        // Tính timestamp đầu ngày & cuối ngày
+        const start = new Date(dateStr);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(dateStr);
+        end.setHours(23, 59, 59, 999);
+
+        // Lọc bản ghi theo khoảng thời gian
+        const filtered = records.filter(r => {
+            if (!r.time) return false;
+
+            // Chuyển chuỗi time (VD: "08-10-2025 10:56:17") thành timestamp
+            const [day, month, yearAndTime] = r.time.split("-");
+            const [year, time] = yearAndTime.split(" ");
+            const dateObj = new Date(`${year}-${month}-${day} ${time}`);
+
+            return dateObj >= start && dateObj <= end;
+        });
+
+        console.log("✅ Các bản ghi trong ngày:", filtered);
+        loadHistoryTable(filtered);
+    }, { onlyOnce: true });
+}
+
 
 // ✅ Hàm xử lý phê duyệt user
 async function approveUser(uid) {
@@ -412,9 +478,35 @@ $(document).ready(function () {
         // Hiện modal
         $("#viewHistoryModal").modal("show");
 
+        // Lưu UID vào modal để sử dụng sau này
+        $("#viewHistoryModal").data("current-uid", uid);
+
         // 🚀 Bước này sau sẽ load dữ liệu từ Firebase
         loadStudentRFIDHistory(uid);
     });
+
+    // Khi người dùng chọn ngày để lọc
+    $("#filterDate").on("change", function () {
+        const selectedDate = $(this).val(); // định dạng yyyy-mm-dd
+        console.log("Ngày được chọn:", selectedDate);
+
+        // Kiểm tra nếu đã có UID của học sinh đang xem
+        const uid = $("#viewHistoryModal").data("current-uid"); // sau này ta gắn class active khi mở modal
+        console.log("UID đang xem:", uid);
+
+        // Gọi hàm lọc (chưa viết)
+        filterHistoryByDate(uid, selectedDate);
+    });
+
+    // sự kiện khi nhấn nút hiển thị tất cả bản ghi gần nhất của USER
+    $("#showAllBtn").on("click", function () {
+        // lấy uid USER đã lưu trong id gắn trong modal
+        const uid = $("#viewHistoryModal").data("current-uid");
+        console.log("UID đang xem:", uid);
+
+        // load tất cả bản ghi gần nhất theo uid USER
+        loadStudentRFIDHistory(uid);
+    })
 
     // Đăng nhập ẩn danh Firebase
     signInAnonymously(auth).then(() => {

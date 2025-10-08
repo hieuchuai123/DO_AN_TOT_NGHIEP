@@ -244,12 +244,26 @@
     <div id="viewHistoryModal" class="modal fade" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
-
+                <!-- đầu modal -->
                 <div class="modal-header">
                     <h5 class="modal-title">📜 Lịch sử quẹt thẻ</h5>
                 </div>
-
+                <!-- thân modal -->
                 <div class="modal-body">
+                    <!-- bộ lọc FILTER -->
+                    <div class="filter-date-container">
+                        <label for="filterDate" class="filter-date-label">📅 Chọn ngày:</label>
+
+                        <div class="filter-controls">
+                            <input type="date" id="filterDate" class="form-control filter-date-input"
+                                aria-label="Chọn ngày để lọc lịch sử">
+                            <button type="button" id="showAllBtn" class="btn btn-outline-primary btn-sm btn-show-all"
+                                aria-label="Hiển thị tất cả bản ghi gần nhất">
+                                🔄 Hiển thị tất cả
+                            </button>
+                        </div>
+                    </div>
+                    <!-- TABLE HIỂN THỊ LỊCH SỬ QUẸT THẺ CỦA USER-->
                     <table class="table table-bordered">
                         <thead>
                             <tr>
@@ -262,7 +276,7 @@
                         </tbody>
                     </table>
                 </div>
-
+                <!-- cúi modal -->
                 <div class="modal-footer">
                     <button type="button" id="cancel-approve" class="btn btn-secondary"
                         data-bs-dismiss="modal">Đóng</button>
