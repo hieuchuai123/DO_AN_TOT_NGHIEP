@@ -7,34 +7,71 @@ import requests
 import tensorflow as tf
 from queue import Queue, Empty
 from collections import deque
-# ================== HÀM NHẬN DIỆN CẢM XÚC==================
-class EmotionClassifier:
-    def __init__(self, model_path, input_size=(48, 48)):
-        self.model = tf.keras.models.load_model(model_path)
+from pathlib import Path
+import os
+
+# ================== ĐỊNH VỊ FILE MODEL (tự tìm sát file .py) ==================
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_CANDIDATES = [
+    BASE_DIR / "emotion_model.h5",
+    BASE_DIR / "emotion_model.keras",
+    BASE_DIR / "emotion_model",             # trường hợp Windows ẩn đuôi
+    BASE_DIR / "models" / "emotion_model.h5",
+    BASE_DIR / "models" / "emotion_model.keras",
+    BASE_DIR / "models" / "emotion_model",
+]
+def find_model_path():
+    for p in MODEL_CANDIDATES:
+        if p.exists():
+            return str(p)
+    return None
+MODEL_PATH = find_model_path()
+
+# ================== EMOTION (LAZY-LOAD, NON-BLOCKING) ==================
+class EmotionService:
+    def __init__(self, model_path=MODEL_PATH, input_size=(48, 48), labels=None, custom_objects=None):
+        self.path = model_path
         self.input_size = input_size
-        # Lấy nhãn theo thứ tự Keras gán, thường là alphabet
-        self.labels = ['Angry', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise']
-        print("Emotion model loaded successfully.")
+        self.labels = labels or ['Angry','Disgust','Fear','Happy','Neutral','Sad','Surprise']
+        self.custom_objects = custom_objects or {}
+        self.model = None
+        self.ready = False
+        self.error = None
+        threading.Thread(target=self._load, daemon=True).start()
+
+    def _load(self):
+        try:
+            print("[EMOTION] cwd:", os.getcwd())
+            print("[EMOTION] resolved model path:", self.path)
+            if not self.path:
+                tried = ", ".join(str(p) for p in MODEL_CANDIDATES)
+                raise FileNotFoundError(f"Emotion model not found. Tried: {tried}")
+            # compile=False để tránh xung đột version khi chỉ infer
+            self.model = tf.keras.models.load_model(self.path, compile=False, custom_objects=self.custom_objects)
+            self.ready = True
+            print("[EMOTION] model loaded OK")
+        except Exception as e:
+            self.error = repr(e)
+            self.ready = False
+            print("[EMOTION] load failed:", self.error)
 
     def predict(self, face_roi):
-        if face_roi is None or face_roi.size == 0:
-            return "Unknown"
+        if not self.ready or face_roi is None or face_roi.size == 0:
+            return None
         try:
-            # Tiền xử lý ảnh khuôn mặt
-            gray_face = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
-            resized_face = cv2.resize(gray_face, self.input_size, interpolation=cv2.INTER_AREA)
-            normalized_face = resized_face / 255.0
-            reshaped_face = np.reshape(normalized_face, (1, self.input_size[0], self.input_size[1], 1))
-
-            # Dự đoán
-            prediction = self.model.predict(reshaped_face, verbose=0)
-            return self.labels[np.argmax(prediction)]
+            gray = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
+            resized = cv2.resize(gray, self.input_size, interpolation=cv2.INTER_AREA)
+            x = (resized / 255.0).astype(np.float32)
+            x = np.reshape(x, (1, self.input_size[0], self.input_size[1], 1))
+            pred = self.model.predict(x, verbose=0)
+            return self.labels[int(np.argmax(pred))]
         except Exception:
-            return "Error"
+            return None
+
 # ================== CẤU HÌNH ==================
-URL_SNAPSHOT      = "http://192.168.1.47/cam-mid.jpg"  # <-- đổi IP/endpoint của bạn
-CONNECT_TIMEOUT   = 1.5
-READ_TIMEOUT      = 2.5
+URL_SNAPSHOT      = "http://172.16.10.151/cam-mid.jpg"  # đổi đúng endpoint: /capture, /jpg, /cam-*.jpg
+CONNECT_TIMEOUT   = 3.0
+READ_TIMEOUT      = 6.0
 TARGET_FETCH_FPS  = 6
 
 # Xử lý & hiển thị
@@ -50,58 +87,51 @@ ASSIGN_DIST_RATIO = 0.2
 LOST_SEC          = 1.0
 MESH_MIN_INTERVAL = 0.12   # ~8Hz
 
-# ====== Ngưỡng phát hiện (VỪA PHẢI) ======
-# EAR tuyệt đối (fallback)
+# ====== Ngưỡng phát hiện ======
 EAR_SLEEP_ABS     = 0.21
 EAR_DROWSY_ABS    = 0.27
 CLOSED_EYES_TIME  = 1.2
 
-# Thích nghi theo người: tỷ lệ so với baseline mắt mở
-EAR_SLEEP_RATIO   = 0.60   # ngủ nếu EAR < 60% baseline
-EAR_DROWSY_RATIO  = 0.80   # lờ đờ nếu EAR < 80% baseline
-BASELINE_MIN      = 0.22   # kẹp an toàn
+EAR_SLEEP_RATIO   = 0.60
+EAR_DROWSY_RATIO  = 0.80
+BASELINE_MIN      = 0.22
 BASELINE_MAX      = 0.40
-BASELINE_ALPHA    = 0.05   # EMA chậm (học từ từ khi đang tỉnh)
+BASELINE_ALPHA    = 0.05
 
-# Ngáp / lờ đờ (để ra "Met moi", KHÔNG kích "Ngu gat")
 MAR_YAWN          = 0.35
 DROWSY_HOLD_SEC   = 1.0
 YAWN_HOLD_SEC     = 0.6
 
-# Đầu nghiêng (roll) – chống báo nhầm khi lắc nhanh
-TILT_DEG_SLEEP    = 22.0   # |roll| ≥ 22°
-TILT_HOLD_SEC     = 0.8    # giữ ≥ 0.8s
-ROLL_VEL_MAX      = 120.0  # deg/s; nếu lắc nhanh hơn → KHÔNG coi là ngủ gật
+TILT_DEG_SLEEP    = 22.0
+TILT_HOLD_SEC     = 0.8
+ROLL_VEL_MAX      = 120.0
 
-# Wake-up (thoát 'Ngu gat' khi đã tỉnh)
 WAKE_EAR          = 0.27
 WAKE_TILT_DEG     = 8.0
 WAKE_HOLD_SEC     = 0.4
 
-# ========== Giữ ID ổn định (CHỐNG NHẢY P#) ==========
 REACQUIRE_SEC     = 1.2
 REACQ_DIST_RATIO  = 0.35
 STICKY_IOU_BONUS  = 0.50
-EMOTION_CHECK_INTERVAL = 0.5  # Chỉ nhận diện cảm xúc mỗi 0.5 giây (2 lần/giây)
-# ================== FETCHER ==================
+
+EMOTION_CHECK_INTERVAL = 0.5  # 2 lần/giây
+
+# ================== FETCHER (SNAPSHOT, CHỐNG CACHE + LOG) ==================
 class SnapshotFetcher:
-    def __init__(self, url, target_fps=6, connect_to=1.5, read_to=2.5):
-        self.url = url
+    def __init__(self, url, target_fps=6, connect_to=3.0, read_to=6.0):
+        self.base_url = url
         self.min_dt = 1.0 / max(1, int(target_fps))
         self.connect_to = connect_to
         self.read_to    = read_to
-        self.sess = requests.Session()
-        self.sess.headers.update({
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Connection": "keep-alive",
-            "User-Agent": "opencv-python"
-        })
         self._lock = threading.Lock()
         self._frame = None
         self._stop = False
         self._t = threading.Thread(target=self._run, daemon=True)
         self._t.start()
+        print("[FETCHER] started")
+
+    def _url(self):
+        return f"{self.base_url}?t={int(time.time()*1000)}"  # cache-buster
 
     def _run(self):
         last = 0.0
@@ -110,16 +140,38 @@ class SnapshotFetcher:
             if dt < self.min_dt:
                 time.sleep(self.min_dt - dt)
             try:
-                r = self.sess.get(self.url, timeout=(self.connect_to, self.read_to))
-                if r.status_code == 200:
-                    arr = np.frombuffer(r.content, dtype=np.uint8)
-                    frm = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-                    if frm is not None:
-                        with self._lock:
-                            self._frame = frm
-                        last = time.time()
-            except Exception:
-                time.sleep(0.05)
+                r = requests.get(self._url(),
+                                 timeout=(self.connect_to, self.read_to),
+                                 headers={
+                                     "Accept": "image/jpeg",
+                                     "Cache-Control": "no-cache, no-store, must-revalidate",
+                                     "Pragma": "no-cache",
+                                     "Connection": "close",
+                                     "User-Agent": "opencv-python"
+                                 })
+                if r.status_code != 200:
+                    print(f"[FETCHER] HTTP {r.status_code}")
+                    time.sleep(0.2); continue
+
+                ctype = r.headers.get("Content-Type","").lower()
+                if "image" not in ctype:
+                    print(f"[FETCHER] Not an image (Content-Type={ctype})")
+
+                arr = np.frombuffer(r.content, dtype=np.uint8)
+                frm = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                if frm is None:
+                    print(f"[FETCHER] imdecode failed (len={len(r.content)})")
+                    time.sleep(0.2); continue
+
+                with self._lock:
+                    self._frame = frm
+                last = time.time()
+            except requests.Timeout:
+                print("[FETCHER] timeout"); time.sleep(0.2)
+            except requests.ConnectionError as e:
+                print("[FETCHER] conn error:", e); time.sleep(0.5)
+            except Exception as e:
+                print("[FETCHER] error:", repr(e)); time.sleep(0.2)
 
     def read(self):
         with self._lock:
@@ -128,8 +180,6 @@ class SnapshotFetcher:
     def close(self):
         self._stop = True
         try: self._t.join(timeout=1.0)
-        except: pass
-        try: self.sess.close()
         except: pass
 
 # ================== MEDIAPIPE ==================
@@ -177,15 +227,7 @@ def bbox_iou(b1, b2):
     if b1 is None or b2 is None:
         return 0.0
     x11,y11,x12,y12 = b1
-    x21,y21,x22,y22 = b2
-    xi1, yi1 = max(x11,x21), max(y11,y21)
-    xi2, yi2 = min(x12,x22), min(y12,y22)
-    iw, ih = max(0, xi2-xi1), max(0, yi2-yi1)
-    inter = iw*ih
-    a1 = max(0, x12-x11) * max(0, y12-y11)
-    a2 = max(0, x22-x21) * max(0, y22-y21)
-    union = a1 + a2 - inter + 1e-6
-    return float(inter/union)
+    x21,y21,x22,x22 = b2
 
 # ====== tracks & logic ======
 tracks = {
@@ -210,8 +252,8 @@ tracks = {
         "ear_filt": None, "roll_filt": None, "roll_vel_filt": 0.0,
         "ear_open_baseline": None,
         "last_logic_ts": None,
-        "t_last_emotion_check": 0.0, # <-- THÊM DÒNG NÀY
-        "emotion_status": "Unknown" # <-- Thêm dòng này để lưu kết quả
+        "t_last_emotion_check": 0.0,
+        "emotion_status": "Unknown"
     } for tid in range(1, MAX_TRACKS + 1)
 }
 
@@ -238,6 +280,20 @@ def reset_track(tid, deactivate=False, cx=None, cy=None):
     tr["active"] = not deactivate
 
 # ========== GHÉP TRACK ỔN ĐỊNH ==========
+def bbox_iou(b1, b2):
+    if b1 is None or b2 is None:
+        return 0.0
+    x11,y11,x12,y12 = b1
+    x21,y21,x22,y22 = b2
+    xi1, yi1 = max(x11,x21), max(y11,y21)
+    xi2, yi2 = min(x12,x22), min(y12,y22)
+    iw, ih = max(0, xi2-xi1), max(0, yi2-yi1)
+    inter = iw*ih
+    a1 = max(0, x12-x11) * max(0, y12-y11)
+    a2 = max(0, x22-x21) * max(0, y22-y21)
+    union = a1 + a2 - inter + 1e-6
+    return float(inter/union)
+
 def assign_faces_to_tracks(dets, W, H):
     assigned = []
     used_tids = set()
@@ -330,8 +386,7 @@ class FaceMeshWorker:
         self.last_mesh_ts = 0.0
         self.smooth_ear = {tid: deque(maxlen=5) for tid in tracks}
         self.smooth_mar = {tid: deque(maxlen=5) for tid in tracks}
-        # ===DÒNG MỚI ĐƯỢC THÊM  ĐỂ DẪN TỚI MODEL MỚI TRAIN===
-        self.emotion_model = EmotionClassifier('emotion_model.h5') # <-- Đường dẫn tới file model
+        self.emotion = EmotionService(MODEL_PATH)  # lazy-load, non-blocking
         self.t = threading.Thread(target=self._run, daemon=True)
         self.t.start()
 
@@ -390,10 +445,11 @@ class FaceMeshWorker:
                     x1, y1 = max(min(xs), 0), max(min(ys), 0)
                     x2, y2 = min(max(xs), W - 1), min(max(ys), H - 1)
                     cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-                    area = max(1, (x2 - x1) * (y2 - y1))    
+                    area = max(1, (x2 - x1) * (y2 - y1))
                     detections.append({"EAR": EAR, "MAR": MAR, "ROLL": ROLL,
                                        "bbox": (x1, y1, x2, y2),
-                                       "cx": cx, "cy": cy, "area": area,}) 
+                                       "cx": cx, "cy": cy, "area": area})
+
             pairs = assign_faces_to_tracks(detections, W, H) if detections else []
 
             overlay = []
@@ -401,29 +457,13 @@ class FaceMeshWorker:
                 EAR, MAR, ROLL = det["EAR"], det["MAR"], det["ROLL"]
                 x1, y1, x2, y2  = det["bbox"]
                 tr = tracks[tid]
-                  # Bây giờ ta đã biết đây là người có ID `tid`, ta có thể kiểm tra lịch sử
-                emotion = tr.get("emotion_status", "Unknown") 
-                if (now_ts - tr.get("t_last_emotion_check", 0.0)) > EMOTION_CHECK_INTERVAL:
-                  # Chỉ khi đủ thời gian, ta mới cắt ảnh và chạy model AI
-                    x1, y1, x2, y2 = det["bbox"]
-                    face_roi = proc[y1:y2, x1:x2]
-                    emotion = self.emotion_model.predict(face_roi)
-                
-                 # Lưu lại kết quả và thời gian vào "hồ sơ" của người này
-                    tr["emotion_status"] = emotion
-                    tr["t_last_emotion_check"] = now_ts
 
-                 # Gán emotion vào `det` để các bước sau (vẽ overlay) có thể dùng
-                det["emotion"] = emotion
-                # ====== LỌC MỀM cho logic (EMA) ======
-                # dt cho vận tốc roll
+                # ====== LỌC MỀM + VẬN TỐC QUAY ======
                 dt = now_ts - tr["last_logic_ts"] if tr["last_logic_ts"] else 1/8.0
-                dt = max(0.05, min(0.5, dt))  # kẹp an toàn
-                # EAR/ROLL lọc EMA (nhẹ) để giảm nhiễu khi đông người
+                dt = max(0.05, min(0.5, dt))
                 a_ear, a_roll, a_vel = 0.5, 0.5, 0.6
                 tr["ear_filt"]  = EAR  if tr["ear_filt"]  is None else (a_ear*EAR  + (1-a_ear)*tr["ear_filt"])
                 tr["roll_filt"] = ROLL if tr["roll_filt"] is None else (a_roll*ROLL + (1-a_roll)*tr["roll_filt"])
-                # vận tốc quay đầu (deg/s), lọc tiếp
                 roll_vel_inst = (tr["roll_filt"] - (tr["ROLL_last"] if tr["ROLL_last"] is not None else tr["roll_filt"])) / dt
                 tr["roll_vel_filt"] = a_vel*roll_vel_inst + (1-a_vel)*tr["roll_vel_filt"]
 
@@ -431,7 +471,7 @@ class FaceMeshWorker:
                 ROLLf = tr["roll_filt"]
                 VROLL = abs(tr["roll_vel_filt"])
 
-                # ====== CẬP NHẬT BASELINE MẮT MỞ (khi đang tỉnh, đầu tương đối thẳng) ======
+                # ====== BASELINE mắt mở ======
                 if tr["status"] != "Ngu gat" and EARf is not None and (abs(ROLLf) < 12.0):
                     if (tr["ear_open_baseline"] is None) and (EARf > 0.24):
                         tr["ear_open_baseline"] = EARf
@@ -439,7 +479,6 @@ class FaceMeshWorker:
                         tr["ear_open_baseline"] = (1-BASELINE_ALPHA)*tr["ear_open_baseline"] + BASELINE_ALPHA*EARf
                         tr["ear_open_baseline"] = max(BASELINE_MIN, min(BASELINE_MAX, tr["ear_open_baseline"]))
 
-                # Ngưỡng EAR theo baseline (fallback tuyệt đối)
                 if tr["ear_open_baseline"] is not None:
                     ear_sleep_thr  = max(EAR_SLEEP_ABS,  tr["ear_open_baseline"]*EAR_SLEEP_RATIO)
                     ear_drowsy_thr = max(EAR_DROWSY_ABS, tr["ear_open_baseline"]*EAR_DROWSY_RATIO)
@@ -447,7 +486,7 @@ class FaceMeshWorker:
                     ear_sleep_thr  = EAR_SLEEP_ABS
                     ear_drowsy_thr = EAR_DROWSY_ABS
 
-                # ===== NHẮM MẮT đủ lâu -> Ngu gat =====
+                # ====== LOGIC TRẠNG THÁI ======
                 if EARf < ear_sleep_thr:
                     if tr["t_eye_closed_start"] is None:
                         tr["t_eye_closed_start"] = now_ts
@@ -457,7 +496,6 @@ class FaceMeshWorker:
                 else:
                     tr["t_eye_closed_start"] = None
 
-                # ===== NGHIÊNG ĐẦU đủ lâu (và mắt không mở to) -> Ngu gat =====
                 if (abs(ROLLf) >= TILT_DEG_SLEEP) and (VROLL <= ROLL_VEL_MAX) and (EARf < ear_drowsy_thr):
                     if tr["t_tilt_start"] is None:
                         tr["t_tilt_start"] = now_ts
@@ -467,7 +505,6 @@ class FaceMeshWorker:
                 else:
                     tr["t_tilt_start"] = None
 
-                # ===== MET MOI (không làm kích "Ngu gat") =====
                 if ear_sleep_thr <= EARf < ear_drowsy_thr:
                     if tr["t_drowsy_start"] is None:
                         tr["t_drowsy_start"] = now_ts
@@ -485,7 +522,6 @@ class FaceMeshWorker:
                 if tr["status"] != "Ngu gat":
                     tr["status"] = "Met moi" if (d_ok and y_ok) else "Binh thuong"
                 else:
-                    # ===== WAKE-UP =====
                     if (EARf >= max(WAKE_EAR, (tr["ear_open_baseline"]*0.90 if tr["ear_open_baseline"] else WAKE_EAR))) and (abs(ROLLf) <= WAKE_TILT_DEG):
                         if tr["t_wake_start"] is None:
                             tr["t_wake_start"] = now_ts
@@ -497,7 +533,25 @@ class FaceMeshWorker:
                     else:
                         tr["t_wake_start"] = None
 
-                # lưu chỉ số cho overlay + thời gian
+                # ====== EMOTION (không chặn vòng lặp) ======
+                emotion = tr.get("emotion_status", "Unknown")
+                if (now_ts - tr.get("t_last_emotion_check", 0.0)) > EMOTION_CHECK_INTERVAL:
+                    label = None
+                    if self.emotion.ready:
+                        # kẹp bbox chắc chắn nằm trong ảnh
+                        x1c = max(0, min(x1, W-1)); x2c = max(0, min(x2, W-1))
+                        y1c = max(0, min(y1, H-1)); y2c = max(0, min(y2, H-1))
+                        if x2c > x1c and y2c > y1c:
+                            face_roi = proc[y1c:y2c, x1c:x2c]
+                            label = self.emotion.predict(face_roi)  # có thể None
+                    elif self.emotion.error:
+                        label = "Emotion:OFF"
+                    if label:
+                        emotion = label
+                        tr["emotion_status"] = emotion
+                    tr["t_last_emotion_check"] = now_ts
+
+                # ====== LƯU CHO OVERLAY ======
                 tr["EAR_last"]  = EAR
                 tr["MAR_last"]  = MAR
                 tr["ROLL_last"] = ROLLf
@@ -513,7 +567,7 @@ class FaceMeshWorker:
                     "status": tr["status"],
                     "EAR": ear_show,
                     "MAR": mar_show,
-                    "emotion": det.get("emotion", "") # <-- Thêm emotin vao dictionary overlay
+                    "emotion": emotion
                 })
 
             self.last_mesh_ts = now_ts
@@ -565,16 +619,14 @@ try:
                     x1, y1, x2, y2 = item["bbox"]
                     X1, Y1, X2, Y2 = int(x1 * sx), int(y1 * sy), int(x2 * sx), int(y2 * sy)
                     st = item["status"]
-                    emotion = item.get("emotion", "") # Lấy emotion
+                    emotion = item.get("emotion", "")
                     color = (0, 0, 255) if st == "Ngu gat" else (0, 165, 255) if st == "Met moi" else (0, 200, 0)
                     cv2.rectangle(display, (X1, Y1), (X2, Y2), color, 2)
-                      # Vẽ status ngủ gật
                     cv2.putText(display, f"P{item['tid']} {st}", (X1, max(20, Y1 - 8)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-                     # Vẽ status cảm xúc
                     if emotion:
                         cv2.putText(display, emotion, (X1, Y2 + 20),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2) # Màu xanh lam
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
 
             cv2.imshow("Driver State (snapshot, 3-person, robust)", display)
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -585,6 +637,7 @@ except KeyboardInterrupt:
 finally:
     worker.close()
     fetcher.close()
-    face_mesh.close()
+    try: face_mesh.close()
+    except: pass
     if SHOW_WINDOW:
         cv2.destroyAllWindows()
