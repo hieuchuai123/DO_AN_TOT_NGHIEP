@@ -8,13 +8,13 @@ from queue import Queue, Empty
 from collections import deque
 
 # ================== CẤU HÌNH ==================
-URL_SNAPSHOT      = "http://172.16.0.88/cam-mid.jpg"  # <-- đổi IP/endpoint của bạn
+URL_SNAPSHOT      = "http://172.16.10.79/cam-mid.jpg"  # <-- đổi IP/endpoint của bạn
 CONNECT_TIMEOUT   = 1.5
 READ_TIMEOUT      = 2.5
 TARGET_FETCH_FPS  = 6
 
 # Connect to ESP32 MCU
-ESP32_IP = "172.16.0.223"
+ESP32_IP = "172.16.10.74"
 URL = f"http://{ESP32_IP}/send"
 
 # Xử lý & hiển thị
