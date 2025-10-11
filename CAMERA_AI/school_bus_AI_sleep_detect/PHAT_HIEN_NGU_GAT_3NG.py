@@ -8,7 +8,7 @@ from queue import Queue, Empty
 from collections import deque
 
 # ================== CẤU HÌNH ==================
-URL_SNAPSHOT      = "http://172.16.10.79/cam-mid.jpg"  # <-- đổi IP/endpoint của bạn
+URL_SNAPSHOT      = "http://10.0.0.107/cam-mid.jpg"  # <-- đổi IP/endpoint của bạn
 CONNECT_TIMEOUT   = 1.5
 READ_TIMEOUT      = 2.5
 TARGET_FETCH_FPS  = 6
