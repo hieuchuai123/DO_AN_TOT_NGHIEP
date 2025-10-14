@@ -69,7 +69,7 @@ class EmotionService:
             return None
 
 # ================== CẤU HÌNH ==================
-URL_SNAPSHOT      = "http://172.16.10.151/cam-mid.jpg"  # đổi đúng endpoint: /capture, /jpg, /cam-*.jpg
+URL_SNAPSHOT      = "http://10.0.0.107/cam-mid.jpg"  # đổi đúng endpoint: /capture, /jpg, /cam-*.jpg
 CONNECT_TIMEOUT   = 3.0
 READ_TIMEOUT      = 6.0
 TARGET_FETCH_FPS  = 6
