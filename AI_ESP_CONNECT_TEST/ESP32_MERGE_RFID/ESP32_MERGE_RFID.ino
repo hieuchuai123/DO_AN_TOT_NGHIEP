@@ -9,6 +9,16 @@
 #include <LiquidCrystal_I2C.h>  // THƯ VIỆN để giao tiếp I2C với ESP32
 #include <WebServer.h>          // THƯ VIỆN Webserver để connect hai hệ thống AI VÀ RFID
 
+// KHAI BÁO CHÂN MODULE LED RGB
+#define R1 14
+#define G1 13
+
+#define R2 12
+#define G2 27
+
+#define R3 26
+#define G3 32
+
 #define SS_PIN 5
 #define RST_PIN 2
 #define BUZZER_PIN 25                // buzzer pin
@@ -16,8 +26,8 @@ MFRC522 rfid(SS_PIN, RST_PIN);       // setup RFID
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // setup LCD
 
 // WiFi
-#define WIFI_SSID "Su"
-#define WIFI_PASSWORD "sususu2003"
+#define WIFI_SSID "TRAM 247 STUDY CAFE & WORKSPACE"
+#define WIFI_PASSWORD "tramloveyou"
 
 // Firebase
 #define API_KEY "AIzaSyDML_o7tVQOf7wrzdA3NasklY5Wb3cPCjo"
@@ -55,6 +65,15 @@ void handleSend() {
     Serial.print("📩 Nhận được dữ liệu từ Python: ");
     Serial.println(msg);
     String response = "ESP32 đã nhận được: " + msg;
+    // LED 1 - màu ngẫu nhiên
+    analogWrite(G1, random(0, 1023));
+
+    // LED 2 - màu ngẫu nhiên
+    analogWrite(G2, random(0, 1023));
+
+    // LED 3 - màu ngẫu nhiên
+    analogWrite(G3, random(0, 1023));
+
     server.send(200, "text/plain", response);
   } else {
     server.send(400, "text/plain", "Thiếu tham số msg!");
@@ -329,7 +348,15 @@ void setup() {
   Serial.print("📡 ESP32 IP: ");
   Serial.println(WiFi.localIP());
 
-  // khởi tạo WebServer 
+  // Cấu hình tất cả chân là OUTPUT
+  pinMode(R1, OUTPUT);
+  pinMode(G1, OUTPUT);
+  pinMode(R2, OUTPUT);
+  pinMode(G2, OUTPUT);
+  pinMode(R3, OUTPUT);
+  pinMode(G3, OUTPUT);
+
+  // khởi tạo WebServer
   server.on("/", handleRoot);
   server.on("/send", handleSend);
   server.begin();
