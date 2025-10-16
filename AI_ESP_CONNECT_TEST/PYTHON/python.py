@@ -2,7 +2,7 @@ import requests
 import time
 
 # ⚠️ Thay bằng IP của ESP32 in ra trong Serial Monitor
-ESP32_IP = "192.168.1.6"
+ESP32_IP = "10.100.100.37"
 URL = f"http://{ESP32_IP}/send"
 
 def send_message(msg):  

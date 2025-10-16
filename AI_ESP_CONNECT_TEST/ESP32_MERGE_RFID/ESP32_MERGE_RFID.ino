@@ -15,9 +15,19 @@
 MFRC522 rfid(SS_PIN, RST_PIN);       // setup RFID
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // setup LCD
 
+// KHAI BÁO CHÂN MODULE LED RGB
+// #define R1 14
+// #define G1 13
+
+// #define R2 12
+// #define G2 27
+
+// #define R3 26
+// #define G3 32
+
 // WiFi
-#define WIFI_SSID "Su"
-#define WIFI_PASSWORD "sususu2003"
+#define WIFI_SSID "TRAM 247 STUDY CAFE & WORKSPACE"
+#define WIFI_PASSWORD "tramloveyou"
 
 // Firebase
 #define API_KEY "AIzaSyDML_o7tVQOf7wrzdA3NasklY5Wb3cPCjo"
@@ -55,6 +65,14 @@ void handleSend() {
     Serial.print("📩 Nhận được dữ liệu từ Python: ");
     Serial.println(msg);
     String response = "ESP32 đã nhận được: " + msg;
+    // // LED 1 - màu ngẫu nhiên
+    // analogWrite(R1, random(0, 1023));
+
+    // // LED 2 - màu ngẫu nhiên
+    // analogWrite(R2, random(0, 1023));
+
+    // // LED 3 - màu ngẫu nhiên
+    // analogWrite(R3, random(0, 1023));
     server.send(200, "text/plain", response);
   } else {
     server.send(400, "text/plain", "Thiếu tham số msg!");
@@ -319,6 +337,14 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, HIGH);
 
+  // Cấu hình MODULE LED RGB
+  // pinMode(R1, OUTPUT);
+  // pinMode(G1, OUTPUT);
+  // pinMode(R2, OUTPUT);
+  // pinMode(G2, OUTPUT);
+  // pinMode(R3, OUTPUT);
+  // pinMode(G3, OUTPUT);
+
   // khởi tạo wifi và kiểm tra
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) {
@@ -329,7 +355,7 @@ void setup() {
   Serial.print("📡 ESP32 IP: ");
   Serial.println(WiFi.localIP());
 
-  // khởi tạo WebServer 
+  // khởi tạo WebServer
   server.on("/", handleRoot);
   server.on("/send", handleSend);
   server.begin();
