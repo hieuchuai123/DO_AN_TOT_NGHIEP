@@ -2,7 +2,7 @@ import requests
 import time
 
 # ⚠️ Thay bằng IP của ESP32 in ra trong Serial Monitor
-ESP32_IP = "10.100.100.37"
+ESP32_IP = "172.16.10.86"
 URL = f"http://{ESP32_IP}/send"
 
 def send_message(msg):  
@@ -14,6 +14,16 @@ def send_message(msg):
         print("❌ Lỗi khi gửi dữ liệu:", e)
 
 if __name__ == "__main__":
-    send_message("Hello ESP32 👋")
-    time.sleep(1)   # nghỉ 1 giây
-    send_message("Drowsiness detected 🚨")
+    # LED 1
+    # send_message("P1:DETECTED")
+    # send_message("P1:UNDETECTED")
+    # send_message("P1:DROWSINESS")
+    # LED 2
+    # send_message("P2:DETECTED")
+    # send_message("P2:UNDETECTED")
+    # send_message("P2:DROWSINESS")
+    # LED 3
+    # send_message("P3:DETECTED")
+    send_message("P3:UNDETECTED")
+    # send_message("P3:DROWSINESS")
+

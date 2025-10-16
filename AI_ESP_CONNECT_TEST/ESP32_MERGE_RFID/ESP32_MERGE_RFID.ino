@@ -26,8 +26,8 @@ MFRC522 rfid(SS_PIN, RST_PIN);       // setup RFID
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // setup LCD
 
 // WiFi
-#define WIFI_SSID "TRAM 247 STUDY CAFE & WORKSPACE"
-#define WIFI_PASSWORD "tramloveyou"
+#define WIFI_SSID "YoshiYoshi Coffee & Tea"
+#define WIFI_PASSWORD "camonquykhach"
 
 // Firebase
 #define API_KEY "AIzaSyDML_o7tVQOf7wrzdA3NasklY5Wb3cPCjo"
@@ -53,6 +53,20 @@ const unsigned long ntpInterval = 30 * 60 * 1000;  // 30 phút (30 * 60 * 1000 m
 unsigned long lastDisplayTime = 0;
 bool showingMessage = false;
 
+// --- Hàm điều khiển LED ---
+void controlLED(int pinR, int pinG, String state) {
+  if (state == "DETECTED") {
+    analogWrite(pinR, 0);
+    analogWrite(pinG, 1023);  // Xanh
+  } else if (state == "UNDETECTED") {
+    analogWrite(pinR, 0);
+    analogWrite(pinG, 0);  // Tắt
+  } else if (state == "DROWSINESS") {
+    analogWrite(pinR, 1023);
+    analogWrite(pinG, 0);  // Đỏ
+  }
+}
+
 // hàm gửi dữ liệu từ ESP32 đến AI SYSTEM
 void handleRoot() {
   server.send(200, "text/plain", "ESP32 is online!");
@@ -65,14 +79,24 @@ void handleSend() {
     Serial.print("📩 Nhận được dữ liệu từ Python: ");
     Serial.println(msg);
     String response = "ESP32 đã nhận được: " + msg;
-    // LED 1 - màu ngẫu nhiên
-    analogWrite(G1, random(0, 1023));
-
-    // LED 2 - màu ngẫu nhiên
-    analogWrite(G2, random(0, 1023));
-
-    // LED 3 - màu ngẫu nhiên
-    analogWrite(G3, random(0, 1023));
+    // --- Xử lý LED 1 ---
+    if (msg.startsWith("P1:")) {
+      String state = msg.substring(3);
+      state.trim();
+      controlLED(R1, G1, state);
+    }
+    // --- LED 2 ---
+    else if (msg.startsWith("P2:")) {
+      String state = msg.substring(3);
+      state.trim();
+      controlLED(R2, G2, state);
+    }
+    // --- LED 3 ---
+    else if (msg.startsWith("P3:")) {
+      String state = msg.substring(3);
+      state.trim();
+      controlLED(R3, G3, state);
+    }
 
     server.send(200, "text/plain", response);
   } else {
