@@ -69,13 +69,13 @@ class EmotionService:
             return None
 
 # ========== CONFIG ==========
-URL_SNAPSHOT      = "http://172.16.10.59/cam-mid.jpg"  # đổi đúng endpoint
+URL_SNAPSHOT      = "http://172.20.10.5/cam-mid.jpg"  # đổi đúng endpoint
 CONNECT_TIMEOUT   = 3.0
 READ_TIMEOUT      = 6.0
 TARGET_FETCH_FPS  = 6
 
 # ESP32 endpoint
-ESP32_IP = "172.16.10.86"               # <— NHỚ đổi đúng IP hiện tại
+ESP32_IP = "172.20.10.3"               # <— NHỚ đổi đúng IP hiện tại
 URL_SEND = f"http://{ESP32_IP}/send"    # <— đổi route/port nếu firmware khác
 
 # Hiển thị
@@ -101,7 +101,7 @@ BASELINE_MIN      = 0.22
 BASELINE_MAX      = 0.40
 BASELINE_ALPHA    = 0.05
 
-MAR_YAWN          = 0.35
+MAR_YAWN          = 0.25 # giảm từ 0.30 ->0.25 để dễ phát hiện ngáp 
 DROWSY_HOLD_SEC   = 1.0
 YAWN_HOLD_SEC     = 0.6
 
@@ -159,7 +159,8 @@ class StatusBus:
             s2 = self.state.get(2, "UNDETECTED")
             s3 = self.state.get(3, "UNDETECTED")
             snap = (s1, s2, s3)
-            msg = f"STATE P1={s1};P2={s2};P3={s3}"
+            # msg = f"STATE P4={s1};P5={s2};P6={s3}"
+            msg = f"STATE P1={s1};P2={s2};P3={s3}" # đoạn sửa code để đổi vị trí P
         return snap, msg
 
     def _safe_get(self, params):
@@ -194,7 +195,8 @@ class StatusBus:
                 with self._lock:
                     items = list(self.state.items())
                 for tid, label in items:
-                    text = f"P{tid}: {label}"
+                    # text = f"P{tid + 3}: {label}"  # đoạn sửa code để đổi vị trí P
+                    text = f"P{tid }: {label}"
                     ok, _ = self._safe_get({"msg": text})
                     time.sleep(self.TX_GAP)
                     backoff = 0.0 if ok else min(1.0, max(0.2, backoff + 0.2))
@@ -463,7 +465,7 @@ class FaceMeshWorker:
             self.emotion = type("Off", (), {"ready": False, "error":"OFF", "predict": staticmethod(lambda *_: None)})()
 
         # Trục B (sức khỏe)
-        self.win_sec = 60.0
+        self.win_sec = 30.0  # thay đổi để nhạy phần sức khỏe
         self.samples = {tid: deque() for tid in tracks}
         self.events  = {tid: {"blinks": deque(), "yawns": deque()} for tid in tracks}
         self.closed_flag = {tid: False for tid in tracks}
@@ -507,16 +509,16 @@ class FaceMeshWorker:
 
     def health_score_from_metrics(self, tid, metrics, emotion):
         S = 85.0
-        S -= min(45.0, 100.0 * max(0.0, metrics["perclos"] - 0.15))
+        S -= min(45.0, 100.0 * max(0.0, metrics["perclos"] - 0.12)) #Giảm ngưỡng PERCLOS để hệ thống nhạy với việc mắt nhắm nhiều hơn (ban đầu là 0.15)
         br = metrics["blink_rpm"]
-        if br < 8:   S -= (8 - br) * 1.5
-        if br > 25:  S -= (br - 25) * 1.0
-        S -= min(20.0, metrics["yawn_rpm"] * 6.0)
-        S -= max(0.0, (0.6 - metrics["stable_pct"]) * 10.0)
-        emo_pen = {"Sad":6, "Fear":6, "Angry":4, "Surprise":2, "Neutral":0, "Happy":0, "Emotion:OFF":0}
+        if br < 12:   S -= (12 - br) * 1.5 # thu hẹp khoảng blink rate nhạy hơn với tốc độ nháy mắt bất thường (ban đầu br< 10)
+        if br > 21:  S -= (br - 21) * 1.0 # thu hẹp khoảng blink rate nhạy hơn với tốc độ nháy mắt bất thường (ban đầu br> 25)
+        S -= min(20.0, metrics["yawn_rpm"] * 10.0) # ngáp làm giảm điểm sức khỏe nhanh hơn (ban đầu là 6.0)
+        S -= max(0.0, (0.8 - metrics["stable_pct"]) * 10.0) # tăng tỉ lệ từ 0,6-> 0,8 để nhạy hơn với việc đầu bị nghiêng
+        emo_pen = {"Sad":10, "Fear":8, "Angry":6, "Surprise":0, "Neutral":0, "Happy":0, "Emotion:OFF":0} # tăng điểm phạt cho các emotion tiêu cực 
         S -= emo_pen.get(emotion, 0)
         S = float(max(0.0, min(100.0, S)))
-        self.S_disp[tid] = 0.3 * S + 0.7 * self.S_disp[tid]
+        self.S_disp[tid] = 0.4 * S + 0.6 * self.S_disp[tid] #thay đổi độ nháy sức khỏe ban đầu là 0.3 và 0.7
         if self.S_disp[tid] >= 75: health = "Tot"
         elif self.S_disp[tid] >= 55: health = "On"
         elif self.S_disp[tid] >= 40: health = "Met moi"
@@ -682,7 +684,7 @@ class FaceMeshWorker:
                     self.closed_flag[tid] = True; tr["_blink_start"] = now_ts
                 elif tr["ear_filt"] >= ear_thr_blink and self.closed_flag[tid]:
                     dur = now_ts - tr.get("_blink_start", now_ts)
-                    if 0.08 <= dur <= 0.45:
+                    if 0.05 <= dur <= 0.47: # nới lỏng khoảng thời gian dur để dễ bắt nháy mắt hơn(ban đầu là 0.08<= dur<=0.45)
                         self.events[tid]["blinks"].append(now_ts); tr["_t_last_blink"] = now_ts
                     self.closed_flag[tid] = False
 
@@ -790,6 +792,7 @@ try:
 
                         cv2.rectangle(display, (X1, Y1), (X2, Y2), color, 2)
                         cv2.putText(display, f"P{tid} {st}", (X1, max(24, Y1 - 10)),
+                        # cv2.putText(display, f"P{tid +3} {st}", (X1, max(24, Y1 - 10)), # đoạn sửa code để đổi vị trí P
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
                         if emotion:
                             cv2.putText(display, emotion, (X1, Y2 + 18),
