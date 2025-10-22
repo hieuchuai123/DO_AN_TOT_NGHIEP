@@ -4,18 +4,28 @@ import numpy as np
 import time
 import threading
 import requests
+import traceback
 from queue import Queue, Empty
 from collections import deque
 
 # ================== CẤU HÌNH ==================
-URL_SNAPSHOT      = "http://10.0.0.107/cam-mid.jpg"  # <-- đổi IP/endpoint của bạn
+URL_SNAPSHOT      = "http://172.16.10.59/cam-mid.jpg"  # <-- đổi IP/endpoint của bạn
 CONNECT_TIMEOUT   = 1.5
 READ_TIMEOUT      = 2.5
 TARGET_FETCH_FPS  = 6
 
-# Connect to ESP32 MCU
-ESP32_IP = "172.16.10.74"
+# Kết nối ESP32 MCU (gửi trạng thái)
+ESP32_IP = "172.16.10.86"
 URL = f"http://{ESP32_IP}/send"
+
+# ==== HÀM GỬI TÍN HIỆU SANG ESP32 (đặt sớm, top-level) ====
+def send_message(msg):
+    try:
+        response = requests.get(URL, params={"msg": msg}, timeout=3)
+        print("📨 Gửi:", msg)
+        print("📬 ESP32 phản hồi:", response.text)
+    except Exception as e:
+        print("❌ Lỗi khi gửi dữ liệu:", e)
 
 # Xử lý & hiển thị
 PROCESS_WIDTH     = 416
@@ -167,19 +177,6 @@ def bbox_iou(b1, b2):
     union = a1 + a2 - inter + 1e-6
     return float(inter/union)
 
-# SEND MESSAGE TO ESP32 MCU
-def send_message(msg):  
-    try:
-        response = requests.get(URL, params={"msg": msg}, timeout=3)
-        print("📨 Gửi:", msg)
-        print("📬 ESP32 phản hồi:", response.text)
-    except Exception as e:
-        print("❌ Lỗi khi gửi dữ liệu:", e)
-
-# ===== BIẾN CHỐNG SPAM CẢNH BÁO =====
-last_alert_time = 0
-ALERT_COOLDOWN = 5  # số giây tối thiểu giữa 2 lần gửi cảnh báo
-
 # ====== tracks & logic ======
 tracks = {
     tid: {
@@ -205,6 +202,10 @@ tracks = {
         "last_logic_ts": None,
     } for tid in range(1, MAX_TRACKS + 1)
 }
+
+# === Theo dõi trạng thái đã gửi cho từng P (tránh spam theo khung hình) ===
+prev_present = {tid: False for tid in tracks}   # Khung trước P# có xuất hiện (bbox) hay không
+last_sent    = {tid: None  for tid in tracks}   # "DETECTED"/"DROWSINESS"/"UNDETECTED"
 
 def reset_track(tid, deactivate=False, cx=None, cy=None):
     tr = tracks[tid]
@@ -394,10 +395,8 @@ class FaceMeshWorker:
                 tr = tracks[tid]
 
                 # ====== LỌC MỀM cho logic (EMA) ======
-                # dt cho vận tốc roll
                 dt = now_ts - tr["last_logic_ts"] if tr["last_logic_ts"] else 1/8.0
                 dt = max(0.05, min(0.5, dt))  # kẹp an toàn
-                # EAR/ROLL lọc EMA (nhẹ) để giảm nhiễu khi đông người
                 a_ear, a_roll, a_vel = 0.5, 0.5, 0.6
                 tr["ear_filt"]  = EAR  if tr["ear_filt"]  is None else (a_ear*EAR  + (1-a_ear)*tr["ear_filt"])
                 tr["roll_filt"] = ROLL if tr["roll_filt"] is None else (a_roll*ROLL + (1-a_roll)*tr["roll_filt"])
@@ -409,7 +408,7 @@ class FaceMeshWorker:
                 ROLLf = tr["roll_filt"]
                 VROLL = abs(tr["roll_vel_filt"])
 
-                # ====== CẬP NHẬT BASELINE MẮT MỞ (khi đang tỉnh, đầu tương đối thẳng) ======
+                # ====== CẬP NHẬT BASELINE MẮT MỞ ======
                 if tr["status"] != "Ngu gat" and EARf is not None and (abs(ROLLf) < 12.0):
                     if (tr["ear_open_baseline"] is None) and (EARf > 0.24):
                         tr["ear_open_baseline"] = EARf
@@ -445,7 +444,7 @@ class FaceMeshWorker:
                 else:
                     tr["t_tilt_start"] = None
 
-                # ===== MET MOI (không làm kích "Ngu gat") =====
+                # ===== MET MOI =====
                 if ear_sleep_thr <= EARf < ear_drowsy_thr:
                     if tr["t_drowsy_start"] is None:
                         tr["t_drowsy_start"] = now_ts
@@ -461,10 +460,12 @@ class FaceMeshWorker:
                 d_ok = (seconds_since(tr["t_drowsy_start"]) >= DROWSY_HOLD_SEC)
                 y_ok = (seconds_since(tr["t_yawn_start"])   >= YAWN_HOLD_SEC)
                 if tr["status"] != "Ngu gat":
+                    # Nếu muốn "một trong hai" là đủ thì dùng (d_ok or y_ok)
                     tr["status"] = "Met moi" if (d_ok and y_ok) else "Binh thuong"
                 else:
                     # ===== WAKE-UP =====
-                    if (EARf >= max(WAKE_EAR, (tr["ear_open_baseline"]*0.90 if tr["ear_open_baseline"] else WAKE_EAR))) and (abs(ROLLf) <= WAKE_TILT_DEG):
+                    wake_thr = max(WAKE_EAR, (tr["ear_open_baseline"]*0.90 if tr["ear_open_baseline"] else WAKE_EAR))
+                    if (EARf >= wake_thr) and (abs(ROLLf) <= WAKE_TILT_DEG):
                         if tr["t_wake_start"] is None:
                             tr["t_wake_start"] = now_ts
                         if seconds_since(tr["t_wake_start"]) >= WAKE_HOLD_SEC:
@@ -518,7 +519,8 @@ try:
                 cv2.putText(blank, "No frame - check snapshot URL", (12, 120),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
                 cv2.imshow("Driver State (snapshot, 3-person, robust)", blank)
-                cv2.waitKey(1)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
             continue
 
         worker.submit(frame)
@@ -536,23 +538,48 @@ try:
 
             res = worker.get_result()
             if res and DRAW_OVERLAY:
-                Wp, Hp = res["proc_size"]
-                sx, sy = (dispW / float(Wp), dispH / float(Hp))
-                for item in res["overlay"]:
-                    x1, y1, x2, y2 = item["bbox"]
-                    X1, Y1, X2, Y2 = int(x1 * sx), int(y1 * sy), int(x2 * sx), int(y2 * sy)
-                    st = item["status"]
-                    color = (0, 0, 255) if st == "Ngu gat" else (0, 165, 255) if st == "Met moi" else (0, 200, 0)
-                    cv2.rectangle(display, (X1, Y1), (X2, Y2), color, 2)
-                    cv2.putText(display, f"P{item['tid']} {st}", (X1, max(20, Y1 - 8)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-                    
-                    # 🔹 GỬI THÔNG BÁO KHI PHÁT HIỆN NGỦ GẬT
-                    if st == "Ngu gat":
-                        now = time.time()
-                        if now - last_alert_time > ALERT_COOLDOWN:
-                            send_message("Drowsiness detected 🚨")
-                            last_alert_time = now
+                try:
+                    Wp, Hp = res["proc_size"]
+                    sx, sy = (dispW / float(Wp), dispH / float(Hp))
+
+                    # Tập P đang hiện diện ở khung hình này
+                    present_now = set()
+
+                    # --- Vẽ & gửi trạng thái cho các P có bbox ---
+                    for item in res["overlay"]:
+                        x1, y1, x2, y2 = item["bbox"]
+                        X1, Y1, X2, Y2 = int(x1 * sx), int(y1 * sy), int(x2 * sx), int(y2 * sy)
+                        tid = item["tid"]
+                        st  = item["status"]
+                        present_now.add(tid)
+
+                        color = (0, 0, 255) if st == "Ngu gat" else (0, 165, 255) if st == "Met moi" else (0, 200, 0)
+                        cv2.rectangle(display, (X1, Y1), (X2, Y2), color, 2)
+                        cv2.putText(display, f"P{tid} {st}", (X1, max(20, Y1 - 8)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+
+                        # === GỬI TRẠNG THÁI KHI CÓ BBOX ===
+                        # - Ngu gat  -> "P#: DROWSINESS"
+                        # - Còn lại  -> "P#: DETECTED"
+                        label = "DROWSINESS" if st == "Ngu gat" else "DETECTED"
+                        if last_sent[tid] != label:
+                            send_message(f"P{tid}: {label}")
+                            last_sent[tid] = label
+
+                    # --- Gửi UNDETECTED cho P vừa biến mất ---
+                    for tid in tracks.keys():
+                        if tid not in present_now and prev_present.get(tid, False):
+                            if last_sent[tid] != "UNDETECTED":
+                                send_message(f"P{tid}: UNDETECTED")
+                                last_sent[tid] = "UNDETECTED"
+
+                    # --- Cập nhật cờ hiện diện cho vòng kế ---
+                    for tid in tracks.keys():
+                        prev_present[tid] = (tid in present_now)
+
+                except Exception as e:
+                    print("❌ Lỗi ở khối overlay:", e)
+                    traceback.print_exc()
 
             cv2.imshow("Driver State (snapshot, 3-person, robust)", display)
             if cv2.waitKey(1) & 0xFF == ord('q'):
