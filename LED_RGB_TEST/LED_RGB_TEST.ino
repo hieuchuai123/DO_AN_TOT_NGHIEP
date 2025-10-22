@@ -1,11 +1,11 @@
-#define R1 14
-#define G1 13
+#define R1 17
+#define G1 16
 
-#define R2 12
-#define G2 27
+#define R2 15
+#define G2 4
 
-#define R3 26
-#define G3 32
+#define R3 2
+#define G3 33
 
 void setup() {
   // Cấu hình tất cả chân là OUTPUT

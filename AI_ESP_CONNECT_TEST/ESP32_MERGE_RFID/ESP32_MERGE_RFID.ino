@@ -9,6 +9,9 @@
 #include <LiquidCrystal_I2C.h>  // THƯ VIỆN để giao tiếp I2C với ESP32
 #include <WebServer.h>          // THƯ VIỆN Webserver để connect hai hệ thống AI VÀ RFID
 
+unsigned long lastPing = 0;
+const unsigned long pingInterval = 60000;  // 1 phút
+
 // KHAI BÁO CHÂN MODULE LED RGB
 #define R1 14
 #define G1 13
@@ -19,6 +22,15 @@
 #define R3 26
 #define G3 32
 
+#define R4 17
+#define G4 16
+
+#define R5 15
+#define G5 4
+
+// #define R6 2
+// #define G6 33
+
 #define SS_PIN 5
 #define RST_PIN 2
 #define BUZZER_PIN 25                // buzzer pin
@@ -26,8 +38,8 @@ MFRC522 rfid(SS_PIN, RST_PIN);       // setup RFID
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // setup LCD
 
 // WiFi
-#define WIFI_SSID "YoshiYoshi Coffee & Tea"
-#define WIFI_PASSWORD "camonquykhach"
+#define WIFI_SSID "Anhthuanne"
+#define WIFI_PASSWORD "Vothuan123"
 
 // Firebase
 #define API_KEY "AIzaSyDML_o7tVQOf7wrzdA3NasklY5Wb3cPCjo"
@@ -52,6 +64,32 @@ const unsigned long ntpInterval = 30 * 60 * 1000;  // 30 phút (30 * 60 * 1000 m
 // Biến toàn cục của LCD
 unsigned long lastDisplayTime = 0;
 bool showingMessage = false;
+
+void handleFirebaseError(String reason) {
+  Serial.println("🚨 Firebase Error: " + reason);
+
+  if (reason.indexOf("connection") >= 0 ||
+      reason.indexOf("disconnected") >= 0 ||
+      reason.indexOf("ssl") >= 0 ||
+      reason.indexOf("timed out") >= 0 ||
+      reason.indexOf("network") >= 0 ||
+      reason.indexOf("token") >= 0) {
+      
+      Serial.println("🔁 Đang reset WiFi + Firebase...");
+
+      WiFi.disconnect();
+      delay(500);
+      WiFi.reconnect();
+      delay(1000);
+
+      // Reconnect Firebase
+      Firebase.reconnectWiFi(true);
+      Firebase.begin(&config, &auth);
+
+      delay(2000);
+      Serial.println("✅ Đã reset kết nối xong.");
+  }
+}
 
 // --- Hàm điều khiển LED ---
 void controlLED(int pinR, int pinG, String state) {
@@ -97,6 +135,24 @@ void handleSend() {
       state.trim();
       controlLED(R3, G3, state);
     }
+    // --- LED 4 ---
+    else if (msg.startsWith("P4:")) {
+      String state = msg.substring(3);
+      state.trim();
+      controlLED(R4, G4, state);
+    }
+    // --- LED 5 ---
+    else if (msg.startsWith("P5:")) {
+      String state = msg.substring(3);
+      state.trim();
+      controlLED(R5, G5, state);
+    }
+    // // --- LED 6 ---
+    // else if (msg.startsWith("P6:")) {
+    //   String state = msg.substring(3);
+    //   state.trim();
+    //   controlLED(R6, G6, state);
+    // }
 
     server.send(200, "text/plain", response);
   } else {
@@ -379,6 +435,14 @@ void setup() {
   pinMode(G2, OUTPUT);
   pinMode(R3, OUTPUT);
   pinMode(G3, OUTPUT);
+  pinMode(R4, OUTPUT);
+  pinMode(G4, OUTPUT);
+  pinMode(R5, OUTPUT);
+  pinMode(G5, OUTPUT);
+  // pinMode(R6, OUTPUT);
+  // pinMode(G6, OUTPUT);
+  // analogWrite(R6, 0);
+
 
   // khởi tạo WebServer
   server.on("/", handleRoot);
@@ -401,6 +465,11 @@ void setup() {
   Firebase.signUp(&config, &auth, "", "");
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
+  // ⏱️ Giới hạn thời gian phản hồi từ server Firebase (10 giây)
+  config.timeout.serverResponse = 10 * 1000;
+
+  // 🧠 Theo dõi trạng thái token (bắt buộc để tự refresh token)
+  config.token_status_callback = tokenStatusCallback;  // cần include "addons/TokenHelper.h"
 
   Serial.println("✅ Ready to read RFID...");
   showDefaultScreen();
@@ -423,11 +492,18 @@ void loop() {
     lastNtpSync = millis();
   }
 
-  // Nếu Firebase chưa sẵn sàng thì bỏ qua vòng lặp này
+  // 🧩 Kiểm tra WiFi
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("⚠️ WiFi mất kết nối, đang thử reconnect...");
+    WiFi.reconnect();
+    delay(1000);
+  }
+
+  // 🧩 Nếu Firebase chưa sẵn sàng → thử khởi động lại
   if (!Firebase.ready()) {
-    Serial.println("⚠️ Firebase chưa sẵn sàng, bỏ qua vòng lặp...");
-    delay(500);
-    return;
+    Serial.println("⚠️ Firebase chưa sẵn sàng, khởi động lại kết nối...");
+    Firebase.begin(&config, &auth);
+    delay(1000);
   }
 
   // Kiểm tra thẻ RFID
@@ -501,6 +577,15 @@ void loop() {
     showMessage("" + lcdFormatName, "Status:" + newStatus);
 
   } else {
+    // ⚠️ Nếu có lỗi mạng thì KHÔNG thêm Pending
+    String err = fbdo.errorReason();
+
+    if (err.indexOf("connection") >= 0 || err.indexOf("disconnected") >= 0 || err.indexOf("ssl") >= 0 || err.indexOf("timed out") >= 0 || err.indexOf("network") >= 0 || err.indexOf("token") >= 0) {
+      Serial.println("⚠️ Lỗi Firebase mạng hoặc SSL, KHÔNG đưa vào Pending!");
+      handleFirebaseError(err);
+      return;
+    }
+
     // UID chưa tồn tại → đưa vào Pending
     String pendingPath = "/Pending/" + uid;
 
@@ -518,6 +603,16 @@ void loop() {
 
     // UID mới
     showMessage("UID moi", "Cho duyet...");
+  }
+
+  // ❤️ Ping giữ kết nối Firebase (2 phút/lần)
+  if (millis() - lastPing > pingInterval) {
+    lastPing = millis();
+    if (Firebase.RTDB.getInt(&fbdo, "/heartbeat")) {
+      Serial.println("✅ Ping Firebase thành công, giữ kết nối sống.");
+    } else {
+      Serial.println("⚠️ Ping Firebase thất bại: " + fbdo.errorReason());
+    }
   }
 
   delay(2000);
