@@ -38,8 +38,8 @@ MFRC522 rfid(SS_PIN, RST_PIN);       // setup RFID
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // setup LCD
 
 // WiFi
-#define WIFI_SSID "Anhthuanne"
-#define WIFI_PASSWORD "Vothuan123"
+#define WIFI_SSID "hieuchuai"
+#define WIFI_PASSWORD "hieuchuai2003"
 
 // Firebase
 #define API_KEY "AIzaSyDML_o7tVQOf7wrzdA3NasklY5Wb3cPCjo"
@@ -65,35 +65,41 @@ const unsigned long ntpInterval = 30 * 60 * 1000;  // 30 phút (30 * 60 * 1000 m
 unsigned long lastDisplayTime = 0;
 bool showingMessage = false;
 
+// --- Lưu trạng thái hiện tại của từng LED ---
+String ledState[7];  // P1–P6 (bỏ index 0 cho dễ nhìn)
+
 void handleFirebaseError(String reason) {
   Serial.println("🚨 Firebase Error: " + reason);
 
-  if (reason.indexOf("connection") >= 0 ||
-      reason.indexOf("disconnected") >= 0 ||
-      reason.indexOf("ssl") >= 0 ||
-      reason.indexOf("timed out") >= 0 ||
-      reason.indexOf("network") >= 0 ||
-      reason.indexOf("token") >= 0) {
-      
-      Serial.println("🔁 Đang reset WiFi + Firebase...");
+  if (reason.indexOf("connection") >= 0 || reason.indexOf("disconnected") >= 0 || reason.indexOf("ssl") >= 0 || reason.indexOf("timed out") >= 0 || reason.indexOf("network") >= 0 || reason.indexOf("token") >= 0) {
 
-      WiFi.disconnect();
-      delay(500);
-      WiFi.reconnect();
-      delay(1000);
+    Serial.println("🔁 Đang reset WiFi + Firebase...");
 
-      // Reconnect Firebase
-      Firebase.reconnectWiFi(true);
-      Firebase.begin(&config, &auth);
+    WiFi.disconnect();
+    delay(500);
+    WiFi.reconnect();
+    delay(1000);
 
-      delay(2000);
-      Serial.println("✅ Đã reset kết nối xong.");
+    // Reconnect Firebase
+    Firebase.reconnectWiFi(true);
+    Firebase.begin(&config, &auth);
+
+    delay(2000);
+    Serial.println("✅ Đã reset kết nối xong.");
   }
 }
 
-// --- Hàm điều khiển LED ---
-void controlLED(int pinR, int pinG, String state) {
-  if (state == "DETECTED") {
+void controlLED(int ledIndex, int pinR, int pinG, String state) {
+  // --- Nếu đang UNHEALTHY mà nhận tín hiệu khác, bỏ qua ---
+  // Trừ khi là HEALTHY (đã hồi phục) hoặc UNDETECTED (mất người → tắt LED)
+  if (ledState[ledIndex] == "UNHEALTHY" && state != "HEALTHY" && state != "UNDETECTED") {
+    return;
+  }
+
+  ledState[ledIndex] = state;  // Cập nhật trạng thái mới
+
+  // --- Xử lý các trạng thái tức thời ---
+  if (state == "DETECTED" || state == "HEALTHY") {
     analogWrite(pinR, 0);
     analogWrite(pinG, 1023);  // Xanh
   } else if (state == "UNDETECTED") {
@@ -103,6 +109,51 @@ void controlLED(int pinR, int pinG, String state) {
     analogWrite(pinR, 1023);
     analogWrite(pinG, 0);  // Đỏ
   }
+  // Riêng UNHEALTHY thì để loop tự chớp
+}
+
+void updateLEDs() {
+  static unsigned long lastBlink = 0;
+  static bool ledOn = false;
+  unsigned long now = millis();
+
+  if (now - lastBlink > 500) {  // chớp mỗi 0.5 giây
+    lastBlink = now;
+    ledOn = !ledOn;
+
+    for (int i = 1; i <= 6; i++) {
+      if (ledState[i] == "UNHEALTHY") {
+        int pinR, pinG;
+
+        switch (i) {
+          case 1:
+            pinR = R1;
+            pinG = G1;
+            break;
+          case 2:
+            pinR = R2;
+            pinG = G2;
+            break;
+          case 3:
+            pinR = R3;
+            pinG = G3;
+            break;
+          case 4:
+            pinR = R4;
+            pinG = G4;
+            break;
+          case 5:
+            pinR = R5;
+            pinG = G5;
+            break;
+            // case 6: pinR = R6; pinG = G6; break;
+        }
+
+        analogWrite(pinR, ledOn ? 1023 : 0);
+        analogWrite(pinG, 0);
+      }
+    }
+  }
 }
 
 // hàm gửi dữ liệu từ ESP32 đến AI SYSTEM
@@ -110,49 +161,28 @@ void handleRoot() {
   server.send(200, "text/plain", "ESP32 is online!");
 }
 
-// hàm nhận dữ liệu và phản hồi lại AI SYSTEM
 void handleSend() {
   if (server.hasArg("msg")) {
     String msg = server.arg("msg");
     Serial.print("📩 Nhận được dữ liệu từ Python: ");
     Serial.println(msg);
+
     String response = "ESP32 đã nhận được: " + msg;
-    // --- Xử lý LED 1 ---
-    if (msg.startsWith("P1:")) {
-      String state = msg.substring(3);
-      state.trim();
-      controlLED(R1, G1, state);
-    }
+    String state = msg.substring(3);
+    state.trim();
+
+    // --- LED 1 ---
+    if (msg.startsWith("P1:")) controlLED(1, R1, G1, state);
     // --- LED 2 ---
-    else if (msg.startsWith("P2:")) {
-      String state = msg.substring(3);
-      state.trim();
-      controlLED(R2, G2, state);
-    }
+    else if (msg.startsWith("P2:")) controlLED(2, R2, G2, state);
     // --- LED 3 ---
-    else if (msg.startsWith("P3:")) {
-      String state = msg.substring(3);
-      state.trim();
-      controlLED(R3, G3, state);
-    }
+    else if (msg.startsWith("P3:")) controlLED(3, R3, G3, state);
     // --- LED 4 ---
-    else if (msg.startsWith("P4:")) {
-      String state = msg.substring(3);
-      state.trim();
-      controlLED(R4, G4, state);
-    }
+    else if (msg.startsWith("P4:")) controlLED(4, R4, G4, state);
     // --- LED 5 ---
-    else if (msg.startsWith("P5:")) {
-      String state = msg.substring(3);
-      state.trim();
-      controlLED(R5, G5, state);
-    }
-    // // --- LED 6 ---
-    // else if (msg.startsWith("P6:")) {
-    //   String state = msg.substring(3);
-    //   state.trim();
-    //   controlLED(R6, G6, state);
-    // }
+    else if (msg.startsWith("P5:")) controlLED(5, R5, G5, state);
+    // --- LED 6 ---
+    // else if (msg.startsWith("P6:")) controlLED(6, R6, G6, state);
 
     server.send(200, "text/plain", response);
   } else {
@@ -480,6 +510,9 @@ void loop() {
   // chạy server liên tục để bắt sự kiện
   server.handleClient();
 
+  // hiển thị trạng thái chớp tắt khi sức khỏe không ổn
+  updateLEDs();
+
   // Nếu đang hiển thị thông điệp và quá 3 giây thì trả về mặc định
   if (showingMessage && millis() - lastDisplayTime > 3000) {
     showDefaultScreen();
@@ -504,6 +537,16 @@ void loop() {
     Serial.println("⚠️ Firebase chưa sẵn sàng, khởi động lại kết nối...");
     Firebase.begin(&config, &auth);
     delay(1000);
+  }
+
+  // ❤️ Ping giữ kết nối Firebase (2 phút/lần)
+  if (millis() - lastPing > pingInterval) {
+    lastPing = millis();
+    if (Firebase.RTDB.getInt(&fbdo, "/heartbeat")) {
+      Serial.println("✅ Ping Firebase thành công, giữ kết nối sống.");
+    } else {
+      Serial.println("⚠️ Ping Firebase thất bại: " + fbdo.errorReason());
+    }
   }
 
   // Kiểm tra thẻ RFID
@@ -603,16 +646,6 @@ void loop() {
 
     // UID mới
     showMessage("UID moi", "Cho duyet...");
-  }
-
-  // ❤️ Ping giữ kết nối Firebase (2 phút/lần)
-  if (millis() - lastPing > pingInterval) {
-    lastPing = millis();
-    if (Firebase.RTDB.getInt(&fbdo, "/heartbeat")) {
-      Serial.println("✅ Ping Firebase thành công, giữ kết nối sống.");
-    } else {
-      Serial.println("⚠️ Ping Firebase thất bại: " + fbdo.errorReason());
-    }
   }
 
   delay(2000);
