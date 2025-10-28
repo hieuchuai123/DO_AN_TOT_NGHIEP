@@ -28,8 +28,8 @@ const unsigned long pingInterval = 60000;  // 1 phút
 #define R5 15
 #define G5 4
 
-// #define R6 2
-// #define G6 33
+#define R6 3
+#define G6 33
 
 #define SS_PIN 5
 #define RST_PIN 2
@@ -38,8 +38,8 @@ MFRC522 rfid(SS_PIN, RST_PIN);       // setup RFID
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // setup LCD
 
 // WiFi
-#define WIFI_SSID "hieuchuai"
-#define WIFI_PASSWORD "hieuchuai2003"
+#define WIFI_SSID "Anhthuanne"
+#define WIFI_PASSWORD "Vothuan123"
 
 // Firebase
 #define API_KEY "AIzaSyDML_o7tVQOf7wrzdA3NasklY5Wb3cPCjo"
@@ -146,7 +146,10 @@ void updateLEDs() {
             pinR = R5;
             pinG = G5;
             break;
-            // case 6: pinR = R6; pinG = G6; break;
+          case 6:
+            pinR = R6;
+            pinG = G6;
+            break;
         }
 
         analogWrite(pinR, ledOn ? 1023 : 0);
@@ -182,7 +185,7 @@ void handleSend() {
     // --- LED 5 ---
     else if (msg.startsWith("P5:")) controlLED(5, R5, G5, state);
     // --- LED 6 ---
-    // else if (msg.startsWith("P6:")) controlLED(6, R6, G6, state);
+    else if (msg.startsWith("P6:")) controlLED(6, R6, G6, state);
 
     server.send(200, "text/plain", response);
   } else {
@@ -469,9 +472,9 @@ void setup() {
   pinMode(G4, OUTPUT);
   pinMode(R5, OUTPUT);
   pinMode(G5, OUTPUT);
-  // pinMode(R6, OUTPUT);
-  // pinMode(G6, OUTPUT);
-  // analogWrite(R6, 0);
+  pinMode(R6, OUTPUT);
+  pinMode(G6, OUTPUT);
+  analogWrite(R6, 0);
 
 
   // khởi tạo WebServer

@@ -3,7 +3,7 @@ import time
 import random
 
 # ⚠️ Thay bằng IP của ESP32 in ra trong Serial Monitor
-ESP32_IP = "192.168.165.97"
+ESP32_IP = "172.20.10.3"
 URL = f"http://{ESP32_IP}/send"
 
 def send_message(msg):  
@@ -46,5 +46,49 @@ if __name__ == "__main__":
     # send_message("P2:DROWSINESS")
 
     # send_message("P2:UNHEALTHY")
+
+    # LED 3
+    # send_message("P3:DETECTED")
+    # time.sleep(1)
+    # send_message("P3:HEALTHY")
+
+    # send_message("P3:UNDETECTED")
+
+    # send_message("P3:DROWSINESS")
+
+    # send_message("P3:UNHEALTHY")
+
+    # LED 4
+    # send_message("P4:DETECTED")
+    # time.sleep(1)
+    # send_message("P4:HEALTHY")
+
+    # send_message("P4:UNDETECTED")
+
+    # send_message("P4:DROWSINESS")
+
+    # send_message("P4:UNHEALTHY")
+
+    # LED 5
+    # send_message("P5:DETECTED")
+    # time.sleep(1)
+    # send_message("P5:HEALTHY")
+
+    # send_message("P5:UNDETECTED")
+
+    # send_message("P5:DROWSINESS")
+
+    # send_message("P5:UNHEALTHY")
+
+    # LED 6
+    # send_message("P6:DETECTED")
+    # time.sleep(1)
+    # send_message("P6:HEALTHY")
+
+    # send_message("P6:UNDETECTED")
+
+    # send_message("P6:DROWSINESS")
+
+    # send_message("P6:UNHEALTHY")
 
 
