@@ -126,150 +126,80 @@ BLINK_REFRACT_SEC     = 0.7
 
 # ========== STATUS BUS: điều độ HTTP tới ESP32 ==========
 class StatusBus:
+    """
+    Gửi trạng thái P1..P3 điều độ, chống spam/timeout.
+    - aggregate=False: gửi "P1: DETECTED" / "P2: UNDETECTED" / "P3: DROWSINESS" (định dạng cũ).
+    - aggregate=True: gửi 1 snapshot "STATE P1=...;P2=...;P3=..." (nếu firmware hỗ trợ).
+    """
     def __init__(self, url_send, aggregate=False, period=0.60, tx_gap_ms=250):
         self.url = url_send
-        self.AGGREGATE = aggregate # Giữ để tương thích, code này tập trung vào else
+        self.AGGREGATE = aggregate
         self.PERIOD = float(period)
         self.TX_GAP = tx_gap_ms / 1000.0
         self._lock = threading.Lock()
         self._stop = False
-        self.state = {} # Dùng dict {key: label} để lưu cả sleep (1,2,3) và health (11,12,13)
-        self._last_sent_state = {} # Lưu trạng thái đã gửi thành công cho từng key {key: label}
+        self.state = {1: "UNDETECTED", 2: "UNDETECTED", 3: "UNDETECTED"}
+        self._last_sent = None
         self._t = threading.Thread(target=self._run, daemon=True)
         self._t.start()
-        print("[StatusBus] Initialized (Multi-message mode)") # Thêm log
 
-    def set_state(self, key, label):
-        # Key hợp lệ: 1, 2, 3 (sleep) hoặc 11, 12, 13 (health)
-        if key not in range(1, MAX_TRACKS + 1) and key not in range(11, 11 + MAX_TRACKS): return
+    def set_state(self, tid, label):
+        if tid not in (1,2,3): return
         with self._lock:
-            # Chỉ cập nhật nếu trạng thái thực sự thay đổi
-            if self.state.get(key) != label:
-                 self.state[key] = label
-                 # print(f"[StatusBus] State queued: Key {key} = {label}") # Debug log
+            self.state[tid] = label
 
     def close(self):
         self._stop = True
         try: self._t.join(timeout=1.0)
         except: pass
 
+    def _build_snapshot(self):
+        with self._lock:
+            s1 = self.state.get(1, "UNDETECTED")
+            s2 = self.state.get(2, "UNDETECTED")
+            s3 = self.state.get(3, "UNDETECTED")
+            snap = (s1, s2, s3)
+            # msg = f"STATE P4={s1};P5={s2};P6={s3}"
+            msg = f"STATE P1={s1};P2={s2};P3={s3}" # đoạn sửa code để đổi vị trí P
+        return snap, msg
+
     def _safe_get(self, params):
-        # Hàm này giữ nguyên như code của bạn (retry 3 lần, timeout, ...)
+        # retry 3 lần, tách timeout connect/read, đóng kết nối sau mỗi request
         for attempt in range(3):
             try:
                 r = requests.get(
                     self.url,
                     params=params,
-                    timeout=(1.5, 3.0),
+                    timeout=(1.5, 3.0),                # connect=1.5s, read=3s
                     headers={"Connection": "close"},
                     allow_redirects=False
                 )
                 print("→ TX", r.url, "| HTTP", r.status_code, "| RX:", getattr(r, "text", "")[:120])
-                # Chỉ coi là OK nếu status_code là 2xx
-                if 200 <= r.status_code < 300:
-                    return True, getattr(r, "text", "")
-                else:
-                    print(f"❌ TX attempt {attempt+1} received non-2xx status: {r.status_code}")
-                    # Không cần retry nếu lỗi là do server (4xx, 5xx), trừ khi là lỗi tạm thời
-                    if r.status_code < 500 or r.status_code in [501, 505]: # Bad Request, Not Implemented etc. -> No retry
-                         return False, getattr(r, "text", "")
-                    time.sleep(0.25 * (attempt + 1)) # Backoff nhẹ cho lỗi server tạm thời
+                return True, getattr(r, "text", "")
             except Exception as e:
-                print(f"❌ TX attempt {attempt+1} connection/timeout error:", e)
-                time.sleep(0.25 * (attempt + 1))
+                print(f"❌ TX attempt {attempt+1} error:", e)
+                time.sleep(0.25 * (attempt + 1))       # backoff nhẹ
         return False, None
-
-    # Hàm _build_snapshot không cần thiết nếu aggregate=False, có thể xóa hoặc giữ lại
-    # def _build_snapshot(self): ...
 
     def _run(self):
         backoff = 0.0
         while not self._stop:
             t0 = time.time()
-
             if self.AGGREGATE:
-                # Logic aggregate=True nếu bạn muốn dùng
-                # ... (Cần sửa hàm _build_snapshot nếu dùng)
-                pass # Bỏ qua phần này vì bạn dùng aggregate=False
+                snap, msg = self._build_snapshot()
+                if snap != self._last_sent:
+                    ok, _ = self._safe_get({"msg": msg})
+                    backoff = 0.0 if ok else min(1.0, max(0.2, backoff + 0.2))
+                    if ok: self._last_sent = snap
             else:
-                #  LOGIC GỬI NHIỀU TIN NHẮN (KHÔNG ƯU TIÊN, CHỐNG LẶP)
-                messages_to_send_info = [] # List các dict {"key": k, "label": l, "text": t}
-
                 with self._lock:
-                    # Duyệt qua tất cả trạng thái hiện có trong self.state
-                    for key, current_label in list(self.state.items()):
-                        last_sent_label = self._last_sent_state.get(key)
-
-                        # Chỉ thêm vào danh sách gửi nếu trạng thái hiện tại khác trạng thái đã gửi lần trước
-                        if current_label != last_sent_label:
-                            text_to_send = None
-                            person_id_display = -1 # ID để hiển thị (1, 2, 3)
-
-                            # Định dạng tin nhắn dựa trên key
-                            if 1 <= key <= MAX_TRACKS: # Trạng thái ngủ gật (P1, P2, P3)
-                                person_id_display = key
-                                # Chỉ gửi đi nếu không phải HEALTHY
-                                if current_label != "HEALTHY":
-                                    text_to_send = f"P{person_id_display}: {current_label}"
-                            elif 11 <= key <= 10 + MAX_TRACKS: # Trạng thái sức khỏe (P1, P2, P3)
-                                 person_id_display = key - 10
-                                 # Gửi cả UNHEALTHY và HEALTHY
-                                 if current_label == "UNHEALTHY" or current_label == "HEALTHY":
-                                     text_to_send = f"P{person_id_display}: {current_label}"
-                                 # Nếu là HEALTHY -> không gửi gì, nhưng vẫn cập nhật last_sent_state
-
-                            # Nếu có tin nhắn hợp lệ cần gửi
-                            if text_to_send:
-                                messages_to_send_info.append({
-                                    "key": key,
-                                    "label": current_label, # Lưu label hiện tại để cập nhật _last_sent_state
-                                    "text": text_to_send
-                                })
-                            elif current_label == "HEALTHY" and last_sent_label == "UNHEALTHY":
-                                # Nếu chuyển từ UNHEALTHY về HEALTHY, cập nhật last_sent nhưng không gửi
-                                messages_to_send_info.append({
-                                    "key": key,
-                                    "label": current_label,
-                                    "text": None # Đánh dấu không gửi
-                                })
-
-
-                # Gửi các tin nhắn đã lọc (có khoảng nghỉ)
-                any_error_occurred = False
-                sent_keys_this_cycle = set() # Theo dõi key đã gửi thành công trong chu kỳ này
-
-                if messages_to_send_info:
-                    print(f"[StatusBus] Changes detected for keys: {[m['key'] for m in messages_to_send_info]}. Sending necessary messages...") # Debug
-
-                for msg_info in messages_to_send_info:
-                    if msg_info["text"]: # Chỉ gửi nếu có nội dung tin nhắn
-                        print(f"[StatusBus] Attempting to send: {msg_info['text']}") # Debug
-                        ok, _ = self._safe_get({"msg": msg_info["text"]})
-                        if ok:
-                            # Ghi nhận key đã gửi thành công
-                            sent_keys_this_cycle.add(msg_info["key"])
-                        else:
-                            any_error_occurred = True
-                            # Lỗi -> không cập nhật _last_sent_state, sẽ thử lại ở chu kỳ sau
-                        time.sleep(self.TX_GAP) # Giữ khoảng nghỉ
-                    else:
-                         # Nếu text=None (ví dụ: chuyển về HEALTHY), vẫn ghi nhận là đã xử lý
-                         sent_keys_this_cycle.add(msg_info["key"])
-
-                # Cập nhật _last_sent_state cho những key đã được xử lý thành công trong chu kỳ này
-                with self._lock:
-                    for msg_info in messages_to_send_info:
-                         if msg_info["key"] in sent_keys_this_cycle:
-                              self._last_sent_state[msg_info["key"]] = msg_info["label"]
-
-
-                # Xử lý backoff nếu có lỗi xảy ra
-                if any_error_occurred:
-                     backoff = min(1.0, max(0.2, backoff + 0.2))
-                else:
-                     backoff = 0.0 # Reset backoff
-                #  KẾT THÚC LOGIC MỚI
-
+                    items = list(self.state.items())
+                for tid, label in items:
+                    # text = f"P{tid + 3}: {label}"  # đoạn sửa code để đổi vị trí P
+                    text = f"P{tid }: {label}"
+                    ok, _ = self._safe_get({"msg": text})
+                    time.sleep(self.TX_GAP)
+                    backoff = 0.0 if ok else min(1.0, max(0.2, backoff + 0.2))
             dt = time.time() - t0
             time.sleep(max(0.0, self.PERIOD + backoff - dt))
 
@@ -765,36 +695,6 @@ class FaceMeshWorker:
                 # Sức khỏe (trục B)
                 metrics = self.compute_window_metrics(tid, ear_sleep_thr)
                 S_disp, health = self.health_score_from_metrics(tid, metrics, emotion)
-                #  LOGIC XÁC ĐỊNH VÀ GỬI TRẠNG THÁI RIÊNG BIỆT 
-                # 1. Xác định Sleep Label (giữ nguyên)
-                sleep_status = tr["status"]
-                sleep_label = "UNDETECTED"
-                if sleep_status == "Ngu gat":
-                    sleep_label = "DROWSINESS"
-                elif sleep_status == "Binh thuong":
-                    sleep_label = "DETECTED"
-
-                # 2. Xác định Health Label (Thêm HEALTHY)
-                health_label = None # Mặc định
-                if health == "Met moi" or health == "Khong tot":
-                    health_label = "UNHEALTHY"
-                elif health == "Tot" or health == "On": # <-- THÊM ĐIỀU KIỆN NÀY
-                    health_label = "HEALTHY"
-
-                # 3. Gửi Sleep Label cho StatusBus (giữ nguyên)
-                status_bus.set_state(tid, sleep_label)
-
-                # 4. Gửi Health Label (HEALTHY hoặc UNHEALTHY) nếu có thay đổi
-                health_tid_key = tid + 10
-                # Chỉ gọi set_state nếu health_label có giá trị (không phải None)
-                if health_label is not None:
-                    status_bus.set_state(health_tid_key, health_label)
-                # Không cần gửi gì nếu health_label là None (ví dụ: lúc mới khởi tạo)
-
-                # (Tùy chọn) Lưu lại để debug/hiển thị
-                tr["sleep_status_sent"] = sleep_label
-                tr["health_status_sent"] = health_label or "Unknown" # Sửa lại một chút
-                #  KẾT THÚC LOGIC MỚI 
 
                 # Lưu overlay
                 tr["EAR_last"]  = EAR
