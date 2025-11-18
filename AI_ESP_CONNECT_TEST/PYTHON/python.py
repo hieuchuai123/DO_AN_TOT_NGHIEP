@@ -33,7 +33,7 @@ if __name__ == "__main__":
 
     # send_message("P1:UNDETECTED")     
 
-    send_message("P1:DROWSINESS")
+    # send_message("P1:DROWSINESS")
 
     # send_message("P1:UNHEALTHY")
     
@@ -89,7 +89,9 @@ if __name__ == "__main__":
     # send_message("P6:UNDETECTED")
 
     # send_message("P6:DROWSINESS")
-
+    # time.sleep(1)
     # send_message("P6:UNHEALTHY")
+    # time.sleep(1)
+    # send_message("P6:DROWSINESS")
 
 

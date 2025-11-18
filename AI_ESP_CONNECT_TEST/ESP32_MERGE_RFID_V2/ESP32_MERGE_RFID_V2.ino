@@ -53,6 +53,14 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);  // setup LCD
 #define API_KEY "AIzaSyDML_o7tVQOf7wrzdA3NasklY5Wb3cPCjo"
 #define DATABASE_URL "https://do-an-tot-nghiep-9ac13-default-rtdb.firebaseio.com/"
 
+// Firebase BACKUP
+// #define API_KEY "AIzaSyDbnZmfcWqcn4_2LpNUapnw3LGUHxe8_e0"
+// #define DATABASE_URL "https://do-an-tot-nghiep-backup-default-rtdb.firebaseio.com/"
+
+// Firebase BACKUP 2
+// #define API_KEY "AIzaSyBX7aJdbHYClq98eyHhDtZOqQXMMc6e-J8"
+// #define DATABASE_URL "https://do-an-tot-nghiep-backup-2-default-rtdb.firebaseio.com/"
+
 FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
@@ -100,8 +108,12 @@ void handleFirebaseError(String reason) {
   }
 }
 
-// Hàm controlLED 
+// Hàm controlLED
 void controlLED(int ledIndex, int pinCtrl, String state) {
+  if (ledState[ledIndex] == "UNHEALTHY" && state == "DROWSINESS") {
+    return;  // giữ UNHEALTHY
+  }
+
   int swPin;
   switch (ledIndex) {
     case 1: swPin = SW1; break;
@@ -115,7 +127,7 @@ void controlLED(int ledIndex, int pinCtrl, String state) {
 
   // Đọc công tắc
   pinMode(swPin, INPUT_PULLUP);
-  bool seatPressed = (digitalRead(swPin) == LOW); // LOW = có người ngồi
+  bool seatPressed = (digitalRead(swPin) == LOW);  // LOW = có người ngồi
 
   // Lưu trạng thái camera cuối
   lastCameraState[ledIndex] = state;
@@ -123,40 +135,36 @@ void controlLED(int ledIndex, int pinCtrl, String state) {
   // Nếu ghế trống -> luôn vàng, bỏ qua tín hiệu camera
   if (!seatPressed) {
     ledState[ledIndex] = "UNDETECTED";
-    analogWrite(pinCtrl, 200); // vàng
+    analogWrite(pinCtrl, 200);  // vàng
     return;
   }
 
   // Nếu đã ngồi, áp dụng quy tắc ưu tiên
-  // Nếu đang UNHEALTHY và nhận DROWSINESS => bỏ qua
-  if (ledState[ledIndex] == "UNHEALTHY" && state == "DROWSINESS") {
-    return; // giữ UNHEALTHY
-  }
+  // if (ledState[ledIndex] == "UNHEALTHY" && state == "DROWSINESS") {
+  //   return;  // giữ UNHEALTHY
+  // }
 
   // Nếu vào tới đây, cho phép chuyển trạng thái theo camera
   // (UNHEALTHY có thể nhận HEALTHY / UNDETECTED, DROWSINESS có thể bị overriden bởi UNHEALTHY)
   if (state == "DETECTED" || state == "HEALTHY") {
     ledState[ledIndex] = state;
     pinMode(pinCtrl, OUTPUT);
-    digitalWrite(pinCtrl, LOW); // IC đảo -> LED xanh
-  }
-  else if (state == "DROWSINESS") {
+    digitalWrite(pinCtrl, LOW);  // IC đảo -> LED xanh
+  } else if (state == "DROWSINESS") {
     ledState[ledIndex] = "DROWSINESS";
     pinMode(pinCtrl, OUTPUT);
-    digitalWrite(pinCtrl, HIGH); // LED đỏ cố định
-  }
-  else if (state == "UNHEALTHY") {
+    digitalWrite(pinCtrl, HIGH);  // LED đỏ cố định
+  } else if (state == "UNHEALTHY") {
     // luôn ưu tiên UNHEALTHY (ghi đè DROWSINESS)
     ledState[ledIndex] = "UNHEALTHY";
     // nhấp nháy được xử lý trong updateLEDs()
-  }
-  else if (state == "UNDETECTED") {
+  } else if (state == "UNDETECTED") {
     // camera không thấy: nếu vẫn ngồi => UNHEALTHY; nếu không => vàng
     if (seatPressed) {
       ledState[ledIndex] = "UNHEALTHY";
     } else {
       ledState[ledIndex] = "UNDETECTED";
-      analogWrite(pinCtrl, 200); // vàng
+      analogWrite(pinCtrl, 200);  // vàng
     }
   }
 }
@@ -174,12 +182,30 @@ void updateLEDs() {
   for (int i = 1; i <= 6; i++) {
     int pinCtrl, swPin;
     switch (i) {
-      case 1: pinCtrl = R1; swPin = SW1; break;
-      case 2: pinCtrl = R2; swPin = SW2; break;
-      case 3: pinCtrl = R3; swPin = SW3; break;
-      case 4: pinCtrl = R4; swPin = SW4; break;
-      case 5: pinCtrl = R5; swPin = SW5; break;
-      case 6: pinCtrl = R6; swPin = SW6; break;
+      case 1:
+        pinCtrl = R1;
+        swPin = SW1;
+        break;
+      case 2:
+        pinCtrl = R2;
+        swPin = SW2;
+        break;
+      case 3:
+        pinCtrl = R3;
+        swPin = SW3;
+        break;
+      case 4:
+        pinCtrl = R4;
+        swPin = SW4;
+        break;
+      case 5:
+        pinCtrl = R5;
+        swPin = SW5;
+        break;
+      case 6:
+        pinCtrl = R6;
+        swPin = SW6;
+        break;
     }
 
     pinMode(swPin, INPUT_PULLUP);
