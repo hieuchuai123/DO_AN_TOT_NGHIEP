@@ -73,11 +73,7 @@ class EmotionService:
             return None
 
 # ========== CONFIG ==========
-URL_SNAPSHOT      = "http://192.168.197.75/cam-mid.jpg"
-CONNECT_TIMEOUT   = 3.0
-READ_TIMEOUT      = 6.0
-TARGET_FETCH_FPS  = 6
-ESP32_IP = "192.168.197.97" # Hoặc IP ESP32 thật / IP server giả lập
+
 URL_SEND = f"http://{ESP32_IP}/send"
 PROCESS_WIDTH     = 416
 DISPLAY_WIDTH     = 1000
