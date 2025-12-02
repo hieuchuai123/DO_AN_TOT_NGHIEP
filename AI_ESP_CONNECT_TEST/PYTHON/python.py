@@ -4,7 +4,7 @@ import random
 
 # ⚠️ Thay bằng IP của ESP32 in ra trong Serial Monitor
 # ESP32_IP = "172.20.10.7" #iphone
-ESP32_IP = "192.168.197.97" #xiaomi
+ESP32_IP = "192.168.175.97" #xiaomi
 URL = f"http://{ESP32_IP}/send"
 
 def send_message(msg):  
@@ -90,7 +90,7 @@ if __name__ == "__main__":
 
     # send_message("P6:DROWSINESS")
     # time.sleep(1)
-    # send_message("P6:UNHEALTHY")
+    send_message("P6:UNHEALTHY")
     # time.sleep(1)
     # send_message("P6:DROWSINESS")
 
