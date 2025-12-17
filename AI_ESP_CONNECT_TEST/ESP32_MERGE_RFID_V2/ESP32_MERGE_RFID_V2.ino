@@ -154,14 +154,27 @@ void controlLED(int ledIndex, int pinCtrl, String state) {
     ledState[ledIndex] = "DROWSINESS";
     pinMode(pinCtrl, OUTPUT);
     digitalWrite(pinCtrl, HIGH);  // LED đỏ cố định
+    beep(100);
+    delay(100);
+    beep(100);
   } else if (state == "UNHEALTHY") {
     // luôn ưu tiên UNHEALTHY (ghi đè DROWSINESS)
     ledState[ledIndex] = "UNHEALTHY";
+    beep(100);
+    delay(100);
+    beep(300);
+    delay(100);
+    beep(100);
     // nhấp nháy được xử lý trong updateLEDs()
   } else if (state == "UNDETECTED") {
     // camera không thấy: nếu vẫn ngồi => UNHEALTHY; nếu không => vàng
     if (seatPressed) {
       ledState[ledIndex] = "UNHEALTHY";
+      beep(100);
+      delay(100);
+      beep(300);
+      delay(100);
+      beep(100);
     } else {
       ledState[ledIndex] = "UNDETECTED";
       analogWrite(pinCtrl, 200);  // vàng
@@ -215,6 +228,7 @@ void updateLEDs() {
     if (!seatPressed && ledState[i] != "UNDETECTED") {
       ledState[i] = "UNDETECTED";
       analogWrite(pinCtrl, 200);
+      beep(300);
       continue;
     }
 
