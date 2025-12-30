@@ -1,4 +1,0 @@
-hiện tại tôi với bạn tôi đang chuẩn bị làm đồ án tốt nghiệp về đề tài có tên là:
-"THIẾT KẾ VÀ THI CÔNG HỆ THỐNG IOT GIÁM SÁT DỊCH VỤ ĐƯA ĐÓN HỌC SINH"
-thì thầy tôi có đề xuất là hệ thống sẽ ứng dụng IOT và AI để giả lập lại những tình huống  trên xe ví dụ: học sinh ngủ gật, sức khỏe mệt, bỏ quên học sinh, thiếu học sinh. Điểm danh học sinh bằng cách sử dụng thẻ từ để đảm bảo độ chính xác và nhanh gọn khi học sinh lên xe và xuống xe
-_thì hướng đề tài hiện tại là như vậy, bây giờ bạn hãy triển khai cơ bản cho tôi 3 ý trước: sơ đồ khối của hệ thống, các phần mềm sử dụng, các thiết bị có thể sử dụng để thực hiện đồ án 
