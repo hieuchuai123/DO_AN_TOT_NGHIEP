@@ -46,10 +46,10 @@ MFRC522 rfid(SS_PIN, RST_PIN);       // setup RFID
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // setup LCD
 
 // WiFi
-// #define WIFI_SSID "hieuchuai"
-// #define WIFI_PASSWORD "hieuchuai2003"
-#define WIFI_SSID "Lau1"
-#define WIFI_PASSWORD "susu2003"
+#define WIFI_SSID "hieuchuai"
+#define WIFI_PASSWORD "hieuchuai2003"
+// #define WIFI_SSID "Lau1"
+// #define WIFI_PASSWORD "susu2003"
 
 // Firebase
 #define API_KEY "AIzaSyDML_o7tVQOf7wrzdA3NasklY5Wb3cPCjo"
